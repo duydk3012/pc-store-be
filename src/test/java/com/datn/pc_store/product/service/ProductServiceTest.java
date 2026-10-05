@@ -10,10 +10,12 @@ import static org.mockito.Mockito.when;
 import com.datn.pc_store.product.dto.ProductRequest;
 import com.datn.pc_store.product.entity.Product;
 import com.datn.pc_store.product.enums.ProductStatus;
+import com.datn.pc_store.product.mapper.ProductMapper;
 import com.datn.pc_store.product.repository.ProductRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
 import org.springframework.web.server.ResponseStatusException;
 
 class ProductServiceTest {
@@ -24,7 +26,8 @@ class ProductServiceTest {
     @BeforeEach
     void setUp() {
         productRepository = mock(ProductRepository.class);
-        productService = new ProductService(productRepository);
+        productService = new ProductService(
+                productRepository, Mappers.getMapper(ProductMapper.class));
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.datn.pc_store.category.service;
 import com.datn.pc_store.category.dto.CategoryRequest;
 import com.datn.pc_store.category.dto.CategoryResponse;
 import com.datn.pc_store.category.entity.Category;
+import com.datn.pc_store.category.mapper.CategoryMapper;
 import com.datn.pc_store.category.repository.CategoryRepository;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -18,35 +19,36 @@ public class CategoryService {
     private static final int DELETED = 1;
 
     private final CategoryRepository categoryRepository;
+    private final CategoryMapper categoryMapper;
 
-    public CategoryService(CategoryRepository categoryRepository) {
+    public CategoryService(CategoryRepository categoryRepository, CategoryMapper categoryMapper) {
         this.categoryRepository = categoryRepository;
+        this.categoryMapper = categoryMapper;
     }
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> getAll() {
         return categoryRepository.findAllByIsDeletedOrderByIdAsc(ACTIVE)
                 .stream()
-                .map(CategoryResponse::from)
+                .map(categoryMapper::toResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public CategoryResponse getById(Long id) {
-        return CategoryResponse.from(findActiveCategory(id));
+        return categoryMapper.toResponse(findActiveCategory(id));
     }
 
     public CategoryResponse create(CategoryRequest request) {
-        Category category = new Category();
-        applyRequest(category, request);
+        Category category = categoryMapper.toEntity(request);
         category.setIsDeleted(ACTIVE);
-        return CategoryResponse.from(categoryRepository.save(category));
+        return categoryMapper.toResponse(categoryRepository.save(category));
     }
 
     public CategoryResponse update(Long id, CategoryRequest request) {
         Category category = findActiveCategory(id);
-        applyRequest(category, request);
-        return CategoryResponse.from(categoryRepository.saveAndFlush(category));
+        categoryMapper.updateEntity(request, category);
+        return categoryMapper.toResponse(categoryRepository.saveAndFlush(category));
     }
 
     public void delete(Long id) {
@@ -61,8 +63,4 @@ public class CategoryService {
                         HttpStatus.NOT_FOUND, "Category not found: " + id));
     }
 
-    private void applyRequest(Category category, CategoryRequest request) {
-        category.setName(request.name().trim());
-        category.setSlug(request.slug().trim());
-    }
 }

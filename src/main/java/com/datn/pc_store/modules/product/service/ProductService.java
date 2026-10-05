@@ -3,6 +3,7 @@ package com.datn.pc_store.product.service;
 import com.datn.pc_store.product.dto.ProductRequest;
 import com.datn.pc_store.product.dto.ProductResponse;
 import com.datn.pc_store.product.entity.Product;
+import com.datn.pc_store.product.mapper.ProductMapper;
 import com.datn.pc_store.product.enums.ProductStatus;
 import com.datn.pc_store.product.repository.ProductRepository;
 import java.util.List;
@@ -19,36 +20,39 @@ public class ProductService {
     private static final int DELETED = 1;
 
     private final ProductRepository productRepository;
+    private final ProductMapper productMapper;
 
-    public ProductService(ProductRepository productRepository) {
+    public ProductService(ProductRepository productRepository, ProductMapper productMapper) {
         this.productRepository = productRepository;
+        this.productMapper = productMapper;
     }
 
     @Transactional(readOnly = true)
     public List<ProductResponse> getAll() {
         return productRepository.findAllByIsDeletedOrderByIdAsc(ACTIVE)
                 .stream()
-                .map(ProductResponse::from)
+                .map(productMapper::toResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public ProductResponse getById(Long id) {
-        return ProductResponse.from(findActiveProduct(id));
+        return productMapper.toResponse(findActiveProduct(id));
     }
 
     public ProductResponse create(ProductRequest request) {
-        Product product = new Product();
-        applyRequest(product, request);
-        product.setStatus(request.status() == null ? ProductStatus.ON_SALE : request.status());
+        Product product = productMapper.toEntity(request);
+        if (product.getStatus() == null) {
+            product.setStatus(ProductStatus.ON_SALE);
+        }
         product.setIsDeleted(ACTIVE);
-        return ProductResponse.from(productRepository.save(product));
+        return productMapper.toResponse(productRepository.save(product));
     }
 
     public ProductResponse update(Long id, ProductRequest request) {
         Product product = findActiveProduct(id);
-        applyRequest(product, request);
-        return ProductResponse.from(productRepository.saveAndFlush(product));
+        productMapper.updateEntity(request, product);
+        return productMapper.toResponse(productRepository.saveAndFlush(product));
     }
 
     public void delete(Long id) {
@@ -63,17 +67,4 @@ public class ProductService {
                         HttpStatus.NOT_FOUND, "Product not found: " + id));
     }
 
-    private void applyRequest(Product product, ProductRequest request) {
-        product.setName(request.name().trim());
-        product.setSku(request.sku().trim());
-        product.setUnit(request.unit().trim());
-        if (request.status() != null) {
-            product.setStatus(request.status());
-        }
-        product.setTrackingType(request.trackingType());
-        product.setDescription(request.description());
-        product.setSlug(request.slug());
-        product.setImageUrl(request.imageUrl());
-        product.setCategoryBrandsId(request.categoryBrandsId());
-    }
 }

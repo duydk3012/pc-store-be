@@ -9,8 +9,10 @@ import static org.mockito.Mockito.when;
 
 import com.datn.pc_store.category.dto.CategoryRequest;
 import com.datn.pc_store.category.entity.Category;
+import com.datn.pc_store.category.mapper.CategoryMapper;
 import com.datn.pc_store.category.repository.CategoryRepository;
 import java.util.Optional;
+import org.mapstruct.factory.Mappers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -23,7 +25,8 @@ class CategoryServiceTest {
     @BeforeEach
     void setUp() {
         categoryRepository = mock(CategoryRepository.class);
-        categoryService = new CategoryService(categoryRepository);
+        categoryService = new CategoryService(
+                categoryRepository, Mappers.getMapper(CategoryMapper.class));
     }
 
     @Test
