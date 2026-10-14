@@ -43,6 +43,10 @@ dependencies {
 	// ===== Lombok =====
 	compileOnly 'org.projectlombok:lombok'
 
+	// ===== Flyway =====
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	runtimeOnly 'org.flywaydb:flyway-mysql'
+
 	// ===== Annotation processors =====
 	annotationProcessor 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
