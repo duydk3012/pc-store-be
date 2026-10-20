@@ -36,6 +36,7 @@ public class JwtService {
                 .subject(user.getUsername())
                 .claim("uid", user.getId())
                 .claim("role", user.getRole().name())
+                .claim("tv", user.getTokenVersion())
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + expirationMs))
                 .signWith(key)
@@ -44,6 +45,11 @@ public class JwtService {
 
     public String extractUsername(String token) {
         return parse(token).getSubject();
+    }
+
+    public int extractTokenVersion(String token) {
+        Integer tv = parse(token).get("tv", Integer.class);
+        return tv == null ? -1 : tv;
     }
 
     public boolean isValid(String token) {

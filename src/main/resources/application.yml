@@ -40,7 +40,8 @@ app:
     password: ${ADMIN_PASSWORD:}
   jwt:
     secret: ${JWT_SECRET}
-    expiration-ms: 86400000 # 24 giờ
+    expiration-ms: 900000            # access token: 15 phút
+    refresh-expiration-ms: 604800000 # refresh token: 7 ngày
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173} # Vite dev server
   ml-service:

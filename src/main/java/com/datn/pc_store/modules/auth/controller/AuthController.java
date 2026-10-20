@@ -2,6 +2,7 @@ package com.datn.pc_store.modules.auth.controller;
 
 import com.datn.pc_store.modules.auth.dto.AuthResponse;
 import com.datn.pc_store.modules.auth.dto.LoginRequest;
+import com.datn.pc_store.modules.auth.dto.RefreshTokenRequest;
 import com.datn.pc_store.modules.auth.dto.RegisterRequest;
 import com.datn.pc_store.modules.auth.security.CustomUserDetails;
 import com.datn.pc_store.modules.auth.service.AuthService;
@@ -33,6 +34,23 @@ public class AuthController {
             @Valid @RequestBody LoginRequest req
             ) {
         return authService.login(req);
+    }
+
+    @PostMapping("/refresh")
+    public AuthResponse refresh(@Valid @RequestBody RefreshTokenRequest req) {
+        return authService.refresh(req.refreshToken());
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest req) {
+        authService.logout(req.refreshToken());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/logout-all")
+    public ResponseEntity<Void> logoutAll(@AuthenticationPrincipal CustomUserDetails principal) {
+        authService.logoutAll(principal.getId());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me")
