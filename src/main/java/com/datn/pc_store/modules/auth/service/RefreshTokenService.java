@@ -4,6 +4,7 @@ import com.datn.pc_store.modules.auth.entity.RefreshToken;
 import com.datn.pc_store.modules.auth.repository.RefreshTokenRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -46,10 +47,12 @@ public class RefreshTokenService {
         return repository.findByTokenHash(hash(raw));
     }
 
+    @Transactional
     public void revokeAllByUser(Long userId) {
         repository.revokeAllByUserId(userId);
     }
 
+    @Transactional
     public int deleteExpired() {
         return repository.deleteExpired(Instant.now());
     }
