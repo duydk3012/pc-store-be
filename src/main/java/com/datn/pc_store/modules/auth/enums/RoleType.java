@@ -5,5 +5,6 @@ public enum RoleType {
     MANAGER,
     CUSTOMER,
     STAFF_WAREHOUSE,
-    STAFF_SALES
+    STAFF_SALES,
+    STAFF_TECH
 }
