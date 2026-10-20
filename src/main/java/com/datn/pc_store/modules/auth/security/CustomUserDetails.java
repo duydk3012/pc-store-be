@@ -36,6 +36,10 @@ public class CustomUserDetails implements UserDetails {
         return user.getUsername();
     }
 
+    public int getTokenVersion() {
+        return user.getTokenVersion();
+    }
+
     /**
      * BANNED -> LockedException khi đăng nhập
      */
