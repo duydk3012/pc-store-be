@@ -46,3 +46,6 @@ app:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173} # Vite dev server
   ml-service:
     url: ${ML_SERVICE_URL:http://localhost:8000} # FastAPI
+  cleanup:
+    enabled: true
+    refresh-token-cron: "0 0 3 * * *"   # giây phút giờ ngày tháng thứ
