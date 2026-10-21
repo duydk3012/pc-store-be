@@ -1,8 +1,8 @@
-package com.datn.pc_store.modules.auth.entity;
+package com.datn.pc_store.modules.user.entity;
 
 import com.datn.pc_store.common.entity.BaseEntity;
-import com.datn.pc_store.modules.auth.enums.RoleType;
-import com.datn.pc_store.modules.auth.enums.UserStatus;
+import com.datn.pc_store.modules.user.enums.RoleType;
+import com.datn.pc_store.modules.user.enums.UserStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.SQLDelete;

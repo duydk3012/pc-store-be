@@ -1,7 +1,7 @@
 package com.datn.pc_store.modules.auth.security;
 
-import com.datn.pc_store.modules.auth.entity.User;
-import com.datn.pc_store.modules.auth.enums.UserStatus;
+import com.datn.pc_store.modules.user.entity.User;
+import com.datn.pc_store.modules.user.enums.UserStatus;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
