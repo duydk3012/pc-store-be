@@ -17,7 +17,7 @@ CREATE TABLE users (
     PRIMARY KEY (id),
     CONSTRAINT uk_users_username UNIQUE (username),
     CONSTRAINT uk_users_email    UNIQUE (email),
-    CONSTRAINT chk_users_role    CHECK (role IN ('ADMIN','MANAGER','CUSTOMER','STAFF_WAREHOUSE','STAFF_SALES','STAFF_TECH')),
+    CONSTRAINT chk_users_role    CHECK (role IN ('ADMIN','MANAGER','CUSTOMER','STAFF_WAREHOUSE','STAFF_SALES')),
     CONSTRAINT chk_users_status  CHECK (status IN ('ACTIVE','INACTIVE','BANNED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -1,6 +1,6 @@
 package com.datn.pc_store.modules.auth.security;
 
-import com.datn.pc_store.modules.auth.entity.User;
+import com.datn.pc_store.modules.user.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;

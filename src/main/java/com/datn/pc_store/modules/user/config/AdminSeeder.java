@@ -1,9 +1,9 @@
-package com.datn.pc_store.modules.auth.config;
+package com.datn.pc_store.modules.user.config;
 
-import com.datn.pc_store.modules.auth.entity.User;
-import com.datn.pc_store.modules.auth.enums.RoleType;
-import com.datn.pc_store.modules.auth.enums.UserStatus;
-import com.datn.pc_store.modules.auth.repository.UserRepository;
+import com.datn.pc_store.modules.user.entity.User;
+import com.datn.pc_store.modules.user.enums.RoleType;
+import com.datn.pc_store.modules.user.enums.UserStatus;
+import com.datn.pc_store.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

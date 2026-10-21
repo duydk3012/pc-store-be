@@ -1,6 +1,6 @@
 package com.datn.pc_store.modules.auth.security;
 
-import com.datn.pc_store.modules.auth.repository.UserRepository;
+import com.datn.pc_store.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
