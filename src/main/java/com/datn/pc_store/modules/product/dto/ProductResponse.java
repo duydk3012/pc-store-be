@@ -39,6 +39,10 @@ public class ProductResponse {
     private Set<Long> categoryIds;
     @Schema(description = "ID danh mục chính", example = "1")
     private Long primaryCategoryId;
+    @Schema(description = "Giá bán hiện tại lưu trực tiếp ở products.price, VND; null nếu chưa gán giá", example = "12990000")
+    private Long price;
+    @Schema(description = "ID phiên bản giá hiện tại; null nếu chưa có giá đang hiệu lực", example = "1")
+    private Long priceId;
     @Schema(description = "Thời gian tạo")
     private Instant createdDate;
     @Schema(description = "ID người tạo")
