@@ -7,6 +7,7 @@ import jakarta.validation.constraints.*;
 import lombok.*;
 
 import java.util.Set;
+import java.math.BigDecimal;
 
 @Getter
 @Setter
@@ -24,6 +25,12 @@ public class ProductCreateRequest {
     @Size(max = 50, message = "Mã sản phẩm tối đa 50 ký tự")
     @Schema(description = "Mã sản phẩm duy nhất, tối đa 50 ký tự", example = "ASUS-RTX5070-12G")
     private String code;
+
+    @Positive(message = "Giá bán phải lớn hơn 0")
+    @Digits(integer = 19, fraction = 0, message = "Giá bán phải là số nguyên VND")
+    @DecimalMax(value = "9223372036854775807", message = "Giá bán vượt giới hạn cho phép")
+    @Schema(description = "Giá bán hiện tại, số nguyên VND; nếu nhập sẽ tự tạo bản lịch sử giá đầu tiên", type = "integer", format = "int64", example = "12990000")
+    private BigDecimal price;
 
     @Size(max = 255, message = "Slug tối đa 255 ký tự")
     @Schema(description = "Đường dẫn duy nhất; tự động tạo từ tên nếu không nhập", example = "card-man-hinh-asus-rtx-5070")

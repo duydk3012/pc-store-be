@@ -2,6 +2,7 @@
 .env
 document/
 docs/
+database/
 
 HELP.md
 .gradle

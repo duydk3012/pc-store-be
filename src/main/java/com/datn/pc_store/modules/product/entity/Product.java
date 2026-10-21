@@ -28,6 +28,9 @@ public class Product extends BaseEntity {
     @Column(nullable = false, unique = true, length = 50)
     private String code;
 
+    @Column(name = "price")
+    private Long price;
+
     @Column(columnDefinition = "TEXT")
     private String description;
 
