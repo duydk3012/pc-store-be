@@ -1,4 +1,4 @@
--- V3__create_catalog_tables.sql
+-- V5__create_catalog_tables.sql
 -- Module Catalog: categories, brands, products, category_products, building_pc, product_price
 
 CREATE TABLE categories (

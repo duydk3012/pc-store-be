@@ -1,4 +1,4 @@
--- V8__create_delivery_and_reviews_tables.sql
+-- V10__create_delivery_and_reviews_tables.sql
 -- Module Delivery, Product Reviews & Favorites: delivery, product_reviews, product_favorites
 
 CREATE TABLE delivery (

@@ -1,4 +1,4 @@
--- V5__create_sales_tables.sql
+-- V7__create_sales_tables.sql
 -- Module Sales: carts, cart_items, orders, order_items, order_item_serial
 
 CREATE TABLE carts (
