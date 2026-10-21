@@ -7,13 +7,14 @@ import jakarta.validation.constraints.*;
 import lombok.*;
 
 import java.util.Set;
+import java.math.BigDecimal;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Schema(description = "Yêu cầu cập nhật sản phẩm; trường tùy chọn null sẽ xóa giá trị cũ, riêng loại và trạng thái giữ nguyên nếu không gửi")
+@Schema(description = "Yêu cầu cập nhật sản phẩm; trường tùy chọn null sẽ xóa giá trị cũ, riêng loại, trạng thái và giá giữ nguyên nếu không gửi")
 public class ProductUpdateRequest {
     @NotBlank(message = "Tên sản phẩm không được để trống")
     @Size(max = 255, message = "Tên sản phẩm tối đa 255 ký tự")
@@ -24,6 +25,12 @@ public class ProductUpdateRequest {
     @Size(max = 50, message = "Mã sản phẩm tối đa 50 ký tự")
     @Schema(description = "Mã sản phẩm duy nhất, tối đa 50 ký tự", example = "ASUS-RTX5070-12G")
     private String code;
+
+    @Positive(message = "Giá bán phải lớn hơn 0")
+    @Digits(integer = 19, fraction = 0, message = "Giá bán phải là số nguyên VND")
+    @DecimalMax(value = "9223372036854775807", message = "Giá bán vượt giới hạn cho phép")
+    @Schema(description = "Giá bán hiện tại, số nguyên VND; giữ nguyên nếu không gửi. Mỗi lần PUT sản phẩm đã có giá sẽ tự tạo lịch sử mới và đóng bản giá cũ", type = "integer", format = "int64", example = "11990000")
+    private BigDecimal price;
 
     @Size(max = 255, message = "Slug tối đa 255 ký tự")
     @Schema(description = "Đường dẫn duy nhất; tự động tạo từ tên nếu không nhập", example = "card-man-hinh-asus-rtx-5070")

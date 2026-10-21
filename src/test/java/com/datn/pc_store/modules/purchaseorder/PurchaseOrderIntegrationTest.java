@@ -146,8 +146,10 @@ class PurchaseOrderIntegrationTest {
         for (HttpMethod method : new HttpMethod[]{HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE}) {
             String path = method == HttpMethod.POST ? "/api/purchase-orders"
                     : "/api/purchase-orders/" + order.getId() + (method == HttpMethod.PATCH ? "/status" : "");
+            String body = method == HttpMethod.PATCH ? "{\"status\":\"PENDING\"}"
+                    : "{\"code\":\"ACCESS\",\"supplierId\":" + supplier.getId() + "}";
             mvc.perform(request(method, path).with(user("warehouse").roles("STAFF_WAREHOUSE"))
-                            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isForbidden());
         }
     }
