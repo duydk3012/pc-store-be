@@ -1,4 +1,4 @@
--- V7__create_warranty_tables.sql
+-- V9__create_warranty_tables.sql
 -- Module Warranty: warranty_policy, warranty, warranty_request, warranty_parts, warranty_part_serial
 
 CREATE TABLE warranty_policy (

@@ -1,4 +1,4 @@
--- V4__create_inventory_tables.sql
+-- V6__create_inventory_tables.sql
 -- Module Inventory & Purchasing: purchase_orders, purchase_order_items, goods_receipts, receipt_items, product_serials, purchase_returns, purchase_return_items
 
 CREATE TABLE purchase_orders (

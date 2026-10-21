@@ -1,4 +1,4 @@
--- V6__create_invoice_and_payment_tables.sql
+-- V8__create_invoice_and_payment_tables.sql
 -- Module Invoices & Payments: payment_methods, invoices, payment
 
 CREATE TABLE payment_methods (
