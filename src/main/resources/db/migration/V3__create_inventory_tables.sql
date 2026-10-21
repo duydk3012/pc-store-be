@@ -1,4 +1,3 @@
-<<<<<<<< HEAD:src/main/resources/db/migration/V3__create_inventory_tables.sql
 -- V3__create_inventory_tables.sql
 -- Phân hệ Inventory & Purchasing: suppliers, purchase_orders, purchase_order_items, goods_receipts, receipt_items, product_serials, purchase_returns, purchase_return_items, delivery
 
@@ -11,7 +10,7 @@ CREATE TABLE suppliers (
     phone_number        VARCHAR(20)   NULL,
     address             VARCHAR(500)  NULL,
     tax_code            VARCHAR(50)   NULL,
-    status              VARCHAR(20)   NOT NULL DEFAULT 'ACTIVE',
+    status              TINYINT       NOT NULL DEFAULT 1 COMMENT '0: inactive, 1: active',
     is_deleted          TINYINT(1)    NOT NULL DEFAULT 0,
     created_by          BIGINT        NULL,
     created_date        DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -20,17 +19,13 @@ CREATE TABLE suppliers (
     PRIMARY KEY (id),
     CONSTRAINT uk_suppliers_code UNIQUE (code),
     CONSTRAINT uk_suppliers_email UNIQUE (email),
-    CONSTRAINT chk_suppliers_status CHECK (status IN ('ACTIVE', 'INACTIVE'))
+    CONSTRAINT chk_suppliers_status CHECK (status IN (0, 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE INDEX idx_suppliers_status ON suppliers (status);
 CREATE INDEX idx_suppliers_name ON suppliers (name);
 CREATE INDEX idx_suppliers_phone ON suppliers (phone_number);
 CREATE INDEX idx_suppliers_tax_code ON suppliers (tax_code);
-========
--- V6__create_inventory_tables.sql
--- Module Inventory & Purchasing: purchase_orders, purchase_order_items, goods_receipts, receipt_items, product_serials, purchase_returns, purchase_return_items
->>>>>>>> main:src/main/resources/db/migration/V6__create_inventory_tables.sql
 
 CREATE TABLE purchase_orders (
     id                  BIGINT        NOT NULL AUTO_INCREMENT,

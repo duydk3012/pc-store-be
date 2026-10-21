@@ -11,7 +11,7 @@ CREATE TABLE users (
     address                      VARCHAR(500)  NULL,
     citizen_identification_card  VARCHAR(20)   NULL,
     role                         VARCHAR(30)   NOT NULL,
-    status                       VARCHAR(20)   NOT NULL DEFAULT 'ACTIVE',
+    status                       TINYINT       NOT NULL DEFAULT 1 COMMENT '0: inactive, 1: active, 2: banned',
     token_version                INT           NOT NULL DEFAULT 0,
     is_deleted                   TINYINT(1)    NOT NULL DEFAULT 0,
     created_by                   BIGINT        NULL,
@@ -21,8 +21,8 @@ CREATE TABLE users (
     PRIMARY KEY (id),
     CONSTRAINT uk_users_username UNIQUE (username),
     CONSTRAINT uk_users_email    UNIQUE (email),
-    CONSTRAINT chk_users_role    CHECK (role IN ('ADMIN','MANAGER','CUSTOMER','STAFF_WAREHOUSE','STAFF_SALES')),
-    CONSTRAINT chk_users_status  CHECK (status IN ('ACTIVE','INACTIVE','BANNED'))
+    CONSTRAINT chk_users_role    CHECK (role IN ('ADMIN','MANAGER','CUSTOMER','STAFF_WAREHOUSE','STAFF_SALES','STAFF_TECH')),
+    CONSTRAINT chk_users_status  CHECK (status IN (0, 1, 2))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE INDEX idx_users_role_status ON users (role, status);
