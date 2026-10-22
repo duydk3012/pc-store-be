@@ -9,7 +9,7 @@ Sau khi cấu hình kết nối MySQL và JWT trong `.env`, chạy:
 ```
 
 Flyway tự tạo bảng và nạp **400 bản ghi cho 32 bảng** qua migration
-`V14__seed_demo_data.sql`. Chỉ nạp một lần; khởi động lại không chèn trùng.
+`V7__seed_demo_data.sql`. Chỉ nạp một lần; khởi động lại không chèn trùng.
 Database đã chạy V1–V13 cũng tự nhận V14 khi khởi động.
 
 Tài khoản demo:

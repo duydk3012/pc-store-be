@@ -1,10 +1,5 @@
-<<<<<<<< HEAD:src/main/resources/db/migration/V5__create_warranty_tables.sql
--- V5__create_warranty_tables.sql
--- Phân hệ Warranty & Technical Services: warranty_policy, warranty, warranty_request, warranty_parts, warranty_part_serial
-========
 -- V9__create_warranty_tables.sql
 -- Module Warranty: warranty_policy, warranty, warranty_request, warranty_parts, warranty_part_serial
->>>>>>>> main:src/main/resources/db/migration/V9__create_warranty_tables.sql
 
 CREATE TABLE warranty_policy (
     id                  BIGINT        NOT NULL AUTO_INCREMENT,
