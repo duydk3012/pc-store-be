@@ -24,7 +24,7 @@ public class PublicProductController {
     private final ProductService productService;
 
     @GetMapping
-    @Operation(summary = "Xem danh sách sản phẩm công khai", description = "Lấy sản phẩm ACTIVE và OUT_OF_STOCK chưa bị xóa; hỗ trợ tìm kiếm, lọc và phân trang. Không hiển thị INACTIVE. Mặc định 20 sản phẩm/trang, sắp xếp theo name,asc. Sort hợp lệ: id, name, code, slug, productType, status, brandId, createdDate, createdBy, lastModifiedDate, lastModifiedBy; có thể lặp lại sort, ví dụ sort=name,asc&sort=id,desc.")
+    @Operation(summary = "Xem danh sách sản phẩm công khai", description = "Lấy sản phẩm ACTIVE và OUT_OF_STOCK chưa bị xóa; hỗ trợ tìm kiếm, lọc và phân trang. Không hiển thị INACTIVE. Mặc định 20 sản phẩm/trang, sắp xếp theo name,asc. Sort hợp lệ: id, name, code, slug, price, productType, status, brandId, createdDate, createdBy, lastModifiedDate, lastModifiedBy; có thể lặp lại sort, ví dụ sort=name,asc&sort=id,desc.")
     public ResponseEntity<PageResponse<ProductResponse>> getProducts(
             @Parameter(description = "Từ khóa tìm kiếm theo tên, mã hoặc slug") @RequestParam(required = false) String keyword,
             @Parameter(description = "Lọc ACTIVE hoặc OUT_OF_STOCK; INACTIVE luôn trả về danh sách rỗng") @RequestParam(required = false) ProductStatus status,

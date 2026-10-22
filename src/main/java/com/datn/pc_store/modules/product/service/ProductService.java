@@ -10,6 +10,9 @@ import com.datn.pc_store.modules.product.entity.*;
 import com.datn.pc_store.modules.product.enums.*;
 import com.datn.pc_store.modules.product.mapper.ProductMapper;
 import com.datn.pc_store.modules.product.repository.*;
+import com.datn.pc_store.modules.productprice.dto.ProductPriceResponse;
+import com.datn.pc_store.modules.productprice.dto.ProductPriceCreateRequest;
+import com.datn.pc_store.modules.productprice.service.ProductPriceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
@@ -24,7 +27,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductService {
     private static final Set<String> SORTABLE_FIELDS = Set.of(
-            "id", "name", "code", "slug", "productType", "status", "brandId",
+            "id", "name", "code", "slug", "price", "productType", "status", "brandId",
             "createdDate", "createdBy", "lastModifiedDate", "lastModifiedBy"
     );
 
@@ -33,6 +36,7 @@ public class ProductService {
     private final BrandRepository brandRepository;
     private final CategoryRepository categoryRepository;
     private final ProductMapper productMapper;
+    private final ProductPriceService productPriceService;
 
     @Transactional(readOnly = true)
     public PageResponse<ProductResponse> getAllProducts(String keyword, ProductStatus status, ProductType productType,
@@ -45,7 +49,8 @@ public class ProductService {
         }
         var page = productRepository.searchProducts(keyword, status, productType, brandId, categoryId, publicOnly, pageable);
         Map<Long, List<ProductCategory>> links = loadCategoryLinks(page.getContent());
-        return PageResponse.of(page.map(product -> toResponse(product, links.getOrDefault(product.getId(), List.of()))));
+        Map<Long, ProductPriceResponse> prices = productPriceService.getCurrentPrices(page.getContent().stream().map(Product::getId).toList());
+        return PageResponse.of(page.map(product -> toResponse(product, links.getOrDefault(product.getId(), List.of()), prices.get(product.getId()))));
     }
 
     @Transactional(readOnly = true)
@@ -74,23 +79,26 @@ public class ProductService {
         product.setName(req.getName().trim());
         product.setCode(code);
         product.setSlug(slug);
+        if (req.getPrice() != null) product.setPrice(req.getPrice().longValueExact());
         product.setStatus(req.getStatus() == null ? ProductStatus.ACTIVE : req.getStatus());
         product.setProductType(req.getProductType() == null ? ProductType.COMPONENT : req.getProductType());
         Product saved = productRepository.save(product);
         replaceCategories(saved.getId(), req.getCategoryIds(), req.getPrimaryCategoryId());
+        recordPrice(saved);
         log.info("Đã tạo sản phẩm id: {}", saved.getId());
         return toResponse(saved);
     }
 
     @Transactional
     public ProductResponse updateProduct(Long id, ProductUpdateRequest req) {
-        Product product = findProduct(id);
+        Product product = lockProduct(id);
         String slug = prepareSlug(req.getName(), req.getSlug());
         String code = req.getCode().trim();
         validateUnique(code, slug, id);
         validateReferences(req.getBrandId(), req.getCategoryIds(), req.getPrimaryCategoryId());
 
         productMapper.updateEntityFromDto(req, product);
+        if (req.getPrice() != null) product.setPrice(req.getPrice().longValueExact());
         product.setName(req.getName().trim());
         product.setCode(code);
         product.setSlug(slug);
@@ -98,26 +106,39 @@ public class ProductService {
         if (req.getProductType() != null) product.setProductType(req.getProductType());
         Product saved = productRepository.save(product);
         replaceCategories(id, req.getCategoryIds(), req.getPrimaryCategoryId());
+        recordPrice(saved);
         log.info("Đã cập nhật sản phẩm id: {}", id);
         return toResponse(saved);
     }
 
     @Transactional
     public ProductResponse updateStatus(Long id, ProductStatus status) {
-        Product product = findProduct(id);
+        Product product = lockProduct(id);
         product.setStatus(status);
         return toResponse(productRepository.save(product));
     }
 
     @Transactional
     public void deleteProduct(Long id) {
-        productRepository.delete(findProduct(id));
+        productRepository.delete(lockProduct(id));
         log.info("Đã xóa mềm sản phẩm id: {}", id);
     }
 
     private Product findProduct(Long id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm", "id", id));
+    }
+
+    private Product lockProduct(Long id) {
+        return productRepository.findForPriceUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm", "id", id));
+    }
+
+    private void recordPrice(Product product) {
+        if (product.getPrice() != null) {
+            productPriceService.createPrice(ProductPriceCreateRequest.builder().productId(product.getId())
+                    .price(java.math.BigDecimal.valueOf(product.getPrice())).build());
+        }
     }
 
     private void requireVisible(Product product, boolean publicOnly) {
@@ -171,14 +192,16 @@ public class ProductService {
     }
 
     private ProductResponse toResponse(Product product) {
-        return toResponse(product, productCategoryRepository.findByProductIdIn(List.of(product.getId())));
+        return toResponse(product, productCategoryRepository.findByProductIdIn(List.of(product.getId())),
+                productPriceService.getCurrentPrices(List.of(product.getId())).get(product.getId()));
     }
 
-    private ProductResponse toResponse(Product product, List<ProductCategory> links) {
+    private ProductResponse toResponse(Product product, List<ProductCategory> links, ProductPriceResponse price) {
         ProductResponse response = productMapper.toResponse(product);
         response.setCategoryIds(links.stream().map(ProductCategory::getCategoryId).collect(Collectors.toCollection(TreeSet::new)));
         response.setPrimaryCategoryId(links.stream().filter(ProductCategory::isPrimary)
                 .map(ProductCategory::getCategoryId).findFirst().orElse(null));
+        response.setPriceId(price == null ? null : price.getId());
         return response;
     }
 }

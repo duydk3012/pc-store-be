@@ -27,7 +27,7 @@ public class ProductController {
     @GetMapping
     @Operation(summary = "Xem danh sách và tìm kiếm sản phẩm",
             description = "Lấy sản phẩm chưa bị xóa có phân trang, tìm theo tên/mã/slug, lọc trạng thái, loại, thương hiệu và danh mục. "
-                    + "Sắp xếp bằng sort=createdDate,desc; có thể lặp lại tham số sort. Các trường cho phép: id, name, code, slug, productType, status, brandId, createdDate, createdBy, lastModifiedDate, lastModifiedBy. Sort sai trả về 400.")
+                    + "Sắp xếp bằng sort=createdDate,desc; có thể lặp lại tham số sort. Các trường cho phép: id, name, code, slug, price, productType, status, brandId, createdDate, createdBy, lastModifiedDate, lastModifiedBy. Sort sai trả về 400.")
     public ResponseEntity<PageResponse<ProductResponse>> getAllProducts(
             @Parameter(description = "Từ khóa tìm kiếm theo tên, mã hoặc slug") @RequestParam(required = false) String keyword,
             @Parameter(description = "Lọc theo trạng thái") @RequestParam(required = false) ProductStatus status,
@@ -62,7 +62,7 @@ public class ProductController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Chỉnh sửa thông tin sản phẩm", description = "Cập nhật sản phẩm theo ID. Tên và mã bắt buộc; slug tự tạo lại từ tên nếu không nhập. Các trường tùy chọn null sẽ xóa giá trị cũ, riêng loại và trạng thái giữ nguyên nếu không gửi. categoryIds thay thế toàn bộ danh sách danh mục. Trả về 404 nếu không tìm thấy, 409 nếu mã hoặc slug trùng.")
+    @Operation(summary = "Chỉnh sửa thông tin sản phẩm", description = "Cập nhật sản phẩm theo ID. Tên và mã bắt buộc; slug tự tạo lại từ tên nếu không nhập. Các trường tùy chọn null sẽ xóa giá trị cũ, riêng loại, trạng thái và price giữ nguyên nếu không gửi. categoryIds thay thế toàn bộ danh sách danh mục. Mỗi PUT sản phẩm đã có giá sẽ tự tạo product_price mới, đóng effective_to của bản đang áp dụng và đặt is_present_price=false cho bản cũ, trong cùng transaction. Trả về 404 nếu không tìm thấy, 409 nếu dữ liệu xung đột.")
     public ResponseEntity<ProductResponse> updateProduct(
             @Parameter(description = "ID sản phẩm cần sửa") @PathVariable Long id,
             @Valid @RequestBody ProductUpdateRequest req
