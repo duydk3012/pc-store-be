@@ -8,8 +8,13 @@ import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import jakarta.persistence.LockModeType;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Product p WHERE p.id=:id")
+    Optional<Product> findForPriceUpdate(@Param("id") Long id);
+
     Optional<Product> findBySlug(String slug);
 
     // Include soft-deleted products: their unique code and slug remain reserved.
