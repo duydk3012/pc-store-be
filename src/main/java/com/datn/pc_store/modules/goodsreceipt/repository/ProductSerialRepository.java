@@ -1,0 +1,31 @@
+package com.datn.pc_store.modules.goodsreceipt.repository;
+
+import com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+public interface ProductSerialRepository extends JpaRepository<ProductSerial, Long> {
+    Optional<ProductSerial> findFirstBySerialNumberAndIsTerminatedFalse(String serialNumber);
+
+    Optional<ProductSerial> findFirstBySerialNumberOrderByCreatedDateDesc(String serialNumber);
+
+    default Optional<ProductSerial> findBySerialNumber(String serialNumber) {
+        return findFirstBySerialNumberOrderByCreatedDateDesc(serialNumber);
+    }
+
+    List<ProductSerial> findAllBySerialNumber(String serialNumber);
+
+    @Query("SELECT ps.serialNumber FROM ProductSerial ps WHERE ps.serialNumber IN :serialNumbers AND ps.isTerminated = false")
+    Set<String> findActiveExistingSerialNumbers(@Param("serialNumbers") Collection<String> serialNumbers);
+
+    @Query("SELECT ps FROM ProductSerial ps WHERE ps.receiptItem.goodsReceipt.id = :goodsReceiptId")
+    List<ProductSerial> findAllByGoodsReceiptId(@Param("goodsReceiptId") Long goodsReceiptId);
+
+    List<ProductSerial> findAllByProductIdAndIsTerminatedFalse(Long productId);
+}
