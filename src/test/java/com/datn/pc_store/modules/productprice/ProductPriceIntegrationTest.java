@@ -1,7 +1,6 @@
 package com.datn.pc_store.modules.productprice;
 
 import com.datn.pc_store.modules.product.entity.Product;
-import com.datn.pc_store.modules.product.enums.ProductStatus;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
 import com.datn.pc_store.modules.productprice.dto.*;
 import com.datn.pc_store.modules.productprice.entity.ProductPrice;
@@ -66,7 +65,7 @@ class ProductPriceIntegrationTest {
     }
 
     @Test
-    void eachProductPutCreatesHistoryClosesOldPriceAndKeepsOmittedPrice() throws Exception {
+    void priceChangesCreateHistoryAndOmittedPriceKeepsCurrentVersion() throws Exception {
         var first = create(1000000);
         String body = "{\"name\":\"GPU Demo\",\"code\":\"PRICE-001\",\"price\":900000}";
         mvc.perform(put("/api/admin/products/" + product.getId()).contentType(MediaType.APPLICATION_JSON).content(body))
@@ -78,10 +77,10 @@ class ProductPriceIntegrationTest {
                         .content("{\"name\":\"GPU Renamed\",\"code\":\"PRICE-001\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.price").value(900000));
         var third = priceService.getCurrentPrice(product.getId(), false);
-        assertThat(third.getId()).isNotEqualTo(second.getId());
-        assertThat(priceRepository.findById(second.getId()).orElseThrow().getEffectiveTo()).isEqualTo(third.getEffectiveFrom());
+        assertThat(third.getId()).isEqualTo(second.getId());
+        assertThat(priceRepository.findById(second.getId()).orElseThrow().getEffectiveTo()).isNull();
         assertThat(jdbc.queryForObject("SELECT price FROM products WHERE id=?", Long.class, product.getId())).isEqualTo(900000);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_price WHERE product_id=?", Long.class, product.getId())).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_price WHERE product_id=?", Long.class, product.getId())).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_price WHERE product_id=? AND is_present_price=true", Long.class, product.getId())).isEqualTo(1);
     }
 
@@ -105,128 +104,30 @@ class ProductPriceIntegrationTest {
     }
 
     @Test
-    void appliesCurrentPriceAndReturnsItInPublicProductResponses() throws Exception {
-        mvc.perform(post("/api/admin/product-prices").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"productId\":" + product.getId() + ",\"price\":12990000}"))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.price").value(12990000))
-                .andExpect(jsonPath("$.isPresentPrice").value(true)).andExpect(jsonPath("$.effectiveFrom").isNotEmpty());
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.price").value(12990000));
-        mvc.perform(get("/api/products/" + product.getId()).with(anonymous()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.price").value(12990000)).andExpect(jsonPath("$.priceId").isNumber());
-        mvc.perform(get("/api/products").with(anonymous())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].price").value(12990000));
-    }
-
-    @Test
-    void changingPriceCreatesNewIdAndPreservesOldAmountAndAudit() throws Exception {
-        var first = create(1000000);
-        mvc.perform(put("/api/admin/product-prices/" + first.getId()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"price\":900000}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.id", not(first.getId().intValue())))
-                .andExpect(jsonPath("$.price").value(900000));
-        var old = priceRepository.findById(first.getId()).orElseThrow();
-        var current = priceService.getCurrentPrice(product.getId(), false);
-        assertThat(old.getPrice()).isEqualTo(1000000);
-        assertThat(old.getCreatedDate()).isEqualTo(first.getCreatedDate());
-        assertThat(old.isPresentPrice()).isFalse();
-        assertThat(old.getEffectiveTo()).isEqualTo(current.getEffectiveFrom());
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_price WHERE product_id=?", Long.class, product.getId())).isEqualTo(2);
-        mvc.perform(put("/api/admin/product-prices/" + first.getId()).contentType(MediaType.APPLICATION_JSON).content("{\"price\":1}"))
-                .andExpect(status().isConflict());
-        mvc.perform(delete("/api/admin/product-prices/" + first.getId())).andExpect(status().isConflict());
-    }
-
-    @Test
-    void subsequentPostClosesPreviousPriceAndDeleteRetainsHistory() throws Exception {
-        var first = create(1000000);
-        var second = create(2000000);
-        assertThat(priceRepository.findById(first.getId()).orElseThrow().isPresentPrice()).isFalse();
-        mvc.perform(delete("/api/admin/product-prices/" + second.getId())).andExpect(status().isNoContent());
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_price WHERE product_id=?", Long.class, product.getId())).isEqualTo(2);
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous())).andExpect(status().isNotFound());
-        mvc.perform(get("/api/products/" + product.getId()).with(anonymous()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.price").isEmpty());
-        mvc.perform(get("/api/admin/product-prices/" + first.getId())).andExpect(status().isOk());
-    }
-
-    @Test
-    void adminOnlyWritesAndPublicCannotSeeHiddenOrDeletedProductPrice() throws Exception {
-        var price = create(1000000);
-        mvc.perform(get("/api/admin/product-prices").with(anonymous())).andExpect(status().isUnauthorized());
-        for (HttpMethod method : new HttpMethod[]{HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT, HttpMethod.DELETE}) {
-            String path = "/api/admin/product-prices" + (method == HttpMethod.PUT || method == HttpMethod.DELETE ? "/" + price.getId() : "");
-            mvc.perform(request(method, path).with(user("customer").roles("CUSTOMER"))
-                            .contentType(MediaType.APPLICATION_JSON).content("{}"))
-                    .andExpect(status().isForbidden());
-        }
-        product.setStatus(ProductStatus.INACTIVE);
-        productRepository.saveAndFlush(product);
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous())).andExpect(status().isNotFound());
-        mvc.perform(get("/api/admin/product-prices/products/" + product.getId() + "/current")).andExpect(status().isOk());
-        product.setDeleted(true);
-        productRepository.saveAndFlush(product);
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous())).andExpect(status().isNotFound());
-        mvc.perform(post("/api/admin/product-prices").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"productId\":" + product.getId() + ",\"price\":1000}"))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
     void enforcesValidityWindowAndHandlesLegacyNullStart() throws Exception {
         Instant at = Instant.now();
         ProductPrice expired = priceRepository.saveAndFlush(ProductPrice.builder().productId(product.getId()).price(100)
                 .effectiveFrom(at.minusSeconds(7200)).effectiveTo(at.minusSeconds(3600)).presentPrice(true).build());
         Instant expiredAt = expired.getEffectiveTo();
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous())).andExpect(status().isNotFound());
+        mvc.perform(get("/api/products/" + product.getId()).with(anonymous())).andExpect(status().isOk()).andExpect(jsonPath("$.priceId").isEmpty());
         var current = create(200);
         assertThat(priceRepository.findById(expired.getId()).orElseThrow().getEffectiveTo()).isEqualTo(expiredAt);
         priceRepository.findById(current.getId()).orElseThrow().setPresentPrice(false);
         priceRepository.flush();
         priceRepository.saveAndFlush(ProductPrice.builder().productId(product.getId()).price(300).presentPrice(true).build());
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.price").value(300));
+        mvc.perform(get("/api/products/" + product.getId()).with(anonymous()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.priceId").isNumber());
     }
 
     @Test
-    void futureDatedLegacyPriceIsNotExposedAndCannotBeSilentlyRewritten() throws Exception {
-        priceRepository.saveAndFlush(ProductPrice.builder().productId(product.getId()).price(500)
-                .effectiveFrom(Instant.now().plusSeconds(3600)).presentPrice(true).build());
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous())).andExpect(status().isNotFound());
-        mvc.perform(post("/api/admin/product-prices").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"productId\":" + product.getId() + ",\"price\":600}"))
-                .andExpect(status().isConflict());
-    }
-
-    @Test
-    void duplicateLegacyCurrentPricesAreReportedAndPostNormalizesThem() throws Exception {
+    void duplicateLegacyCurrentPricesAreReportedAndProductUpdateNormalizesThem() throws Exception {
         create(1000);
         priceRepository.saveAndFlush(ProductPrice.builder().productId(product.getId()).price(2000).presentPrice(true).build());
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous())).andExpect(status().isConflict());
+        mvc.perform(get("/api/products/" + product.getId()).with(anonymous())).andExpect(status().isConflict());
         create(3000);
-        mvc.perform(get("/api/products/" + product.getId() + "/price").with(anonymous()))
+        mvc.perform(get("/api/products/" + product.getId()).with(anonymous()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.price").value(3000));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_price WHERE product_id=? AND is_present_price=true", Long.class, product.getId())).isEqualTo(1);
-    }
-
-    @Test
-    void validatesAmountReferencesAndSortAndFiltersHistory() throws Exception {
-        for (String body : new String[]{"{}", "{\"productId\":1,\"price\":0}", "{\"productId\":1,\"price\":-1}",
-                "{\"productId\":1,\"price\":1.5}", "{\"productId\":1,\"price\":9223372036854775808}"}) {
-            mvc.perform(post("/api/admin/product-prices").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
-        }
-        mvc.perform(post("/api/admin/product-prices").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"productId\":999999,\"price\":1000}"))
-                .andExpect(status().isNotFound());
-        create(1000);
-        create(2000);
-        mvc.perform(get("/api/admin/product-prices").param("productId", product.getId().toString()).param("isPresentPrice", "false")
-                        .param("sort", "price,desc").param("size", "1"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
-                .andExpect(jsonPath("$.content[0].price").value(1000));
-        for (String sort : new String[]{"[]", "[\"string\"]", "unknown,desc"}) {
-            mvc.perform(get("/api/admin/product-prices").param("sort", sort)).andExpect(status().isBadRequest());
-        }
     }
 
     @Test
@@ -234,7 +135,7 @@ class ProductPriceIntegrationTest {
         mvc.perform(get("/v3/api-docs").with(anonymous())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['/api/admin/product-prices'].get.parameters[?(@.name == 'page')].in").value(contains("query")))
                 .andExpect(jsonPath("$.components.schemas.ProductPriceResponse.properties.isPresentPrice").exists())
-                .andExpect(jsonPath("$.paths['/api/products/{productId}/price'].get.security").isEmpty());
+                .andExpect(jsonPath("$.paths['/api/products/{productId}/price']").doesNotExist());
     }
 
     @Test
@@ -259,7 +160,41 @@ class ProductPriceIntegrationTest {
         }
     }
 
+    @Test
+    void productPriceEndpointsAreReadOnly() throws Exception {
+        var first = create(1000000);
+        mvc.perform(post("/api/admin/product-prices").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isMethodNotAllowed());
+        mvc.perform(put("/api/admin/product-prices/" + first.getId()).contentType(MediaType.APPLICATION_JSON).content("{\"price\":1}"))
+                .andExpect(status().isMethodNotAllowed());
+        mvc.perform(delete("/api/admin/product-prices/" + first.getId()))
+                .andExpect(status().isMethodNotAllowed());
+        mvc.perform(get("/api/admin/product-prices/products/" + product.getId() + "/current"))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/admin/product-prices/" + first.getId())).andExpect(status().isOk());
+        var second = create(900000);
+        var old = priceRepository.findById(first.getId()).orElseThrow();
+        assertThat(old.getPrice()).isEqualTo(first.getPrice());
+        assertThat(old.getCreatedDate()).isEqualTo(first.getCreatedDate());
+        assertThat(old.getCreatedBy()).isEqualTo(first.getCreatedBy());
+        assertThat(old.isPresentPrice()).isFalse();
+        assertThat(old.getEffectiveTo()).isEqualTo(second.getEffectiveFrom());
+        mvc.perform(get("/api/products/" + product.getId()).with(anonymous()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.price").value(900000));
+        mvc.perform(put("/api/admin/products/" + product.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"GPU Demo\",\"code\":\"PRICE-001\",\"price\":900000}"))
+                .andExpect(status().isOk());
+        assertThat(priceService.getCurrentPrice(product.getId(), false).getId()).isEqualTo(second.getId());
+    }
     private ProductPriceResponse create(long amount) {
-        return priceService.createPrice(ProductPriceCreateRequest.builder().productId(product.getId()).price(java.math.BigDecimal.valueOf(amount)).build());
+        try {
+            mvc.perform(put("/api/admin/products/" + product.getId()).with(user("admin").roles("ADMIN"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"GPU Demo\",\"code\":\"PRICE-001\",\"price\":" + amount + "}"))
+                    .andExpect(status().isOk());
+            return priceService.getCurrentPrice(product.getId(), false);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }

@@ -69,33 +69,11 @@ public class ProductPriceService {
         return result;
     }
 
+    /** Append a version through the product workflow; historical amounts are immutable. */
     @Transactional
-    public ProductPriceResponse createPrice(ProductPriceCreateRequest req) {
-        lockProduct(req.getProductId());
-        return applyPrice(req.getProductId(), req.getPrice().longValueExact(), now());
-    }
-
-    @Transactional
-    public ProductPriceResponse updatePrice(Long id, ProductPriceUpdateRequest req) {
-        ProductPrice original = findPrice(id);
-        lockProduct(original.getProductId());
-        Instant at = now();
-        requireCurrent(id, original.getProductId(), at);
-        return applyPrice(original.getProductId(), req.getPrice().longValueExact(), at);
-    }
-
-    @Transactional
-    public void deactivatePrice(Long id) {
-        ProductPrice original = findPrice(id);
-        lockProduct(original.getProductId());
-        Instant at = now();
-        ProductPrice current = requireCurrent(id, original.getProductId(), at);
-        current.setPresentPrice(false);
-        current.setEffectiveTo(at);
-        productPriceRepository.saveAndFlush(current);
-        Product product = lockProduct(original.getProductId());
-        product.setPrice(null);
-        productRepository.saveAndFlush(product);
+    public void recordProductPrice(Long productId, long amount) {
+        lockProduct(productId);
+        applyPrice(productId, amount, now());
     }
 
     private ProductPriceResponse applyPrice(Long productId, long amount, Instant at) {
@@ -112,19 +90,7 @@ public class ProductPriceService {
         productPriceRepository.saveAllAndFlush(oldPrices);
         ProductPrice price = ProductPrice.builder().productId(productId).price(amount)
                 .effectiveFrom(at).presentPrice(true).build();
-        Product product = lockProduct(productId);
-        product.setPrice(amount);
-        productRepository.saveAndFlush(product);
         return productPriceMapper.toResponse(productPriceRepository.saveAndFlush(price));
-    }
-
-    private ProductPrice requireCurrent(Long id, Long productId, Instant at) {
-        // Re-query after taking the parent lock: a concurrent request may already have replaced this ID.
-        List<ProductPrice> current = productPriceRepository.findCurrentPricesForUpdate(productId, at);
-        if (current.size() != 1 || !current.getFirst().getId().equals(id)) {
-            throw conflict("Chỉ được thay đổi hoặc ngừng áp dụng phiên bản giá hiện tại. Giá lịch sử được giữ nguyên.");
-        }
-        return current.getFirst();
     }
 
     private ProductPrice findPrice(Long id) {
