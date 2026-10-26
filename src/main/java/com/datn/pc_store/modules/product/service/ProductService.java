@@ -11,7 +11,6 @@ import com.datn.pc_store.modules.product.enums.*;
 import com.datn.pc_store.modules.product.mapper.ProductMapper;
 import com.datn.pc_store.modules.product.repository.*;
 import com.datn.pc_store.modules.productprice.dto.ProductPriceResponse;
-import com.datn.pc_store.modules.productprice.dto.ProductPriceCreateRequest;
 import com.datn.pc_store.modules.productprice.service.ProductPriceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -97,6 +96,7 @@ public class ProductService {
         validateUnique(code, slug, id);
         validateReferences(req.getBrandId(), req.getCategoryIds(), req.getPrimaryCategoryId());
 
+        Long previousPrice = product.getPrice();
         productMapper.updateEntityFromDto(req, product);
         if (req.getPrice() != null) product.setPrice(req.getPrice().longValueExact());
         product.setName(req.getName().trim());
@@ -106,7 +106,7 @@ public class ProductService {
         if (req.getProductType() != null) product.setProductType(req.getProductType());
         Product saved = productRepository.save(product);
         replaceCategories(id, req.getCategoryIds(), req.getPrimaryCategoryId());
-        recordPrice(saved);
+        if (!Objects.equals(previousPrice, saved.getPrice())) recordPrice(saved);
         log.info("Đã cập nhật sản phẩm id: {}", id);
         return toResponse(saved);
     }
@@ -136,8 +136,7 @@ public class ProductService {
 
     private void recordPrice(Product product) {
         if (product.getPrice() != null) {
-            productPriceService.createPrice(ProductPriceCreateRequest.builder().productId(product.getId())
-                    .price(java.math.BigDecimal.valueOf(product.getPrice())).build());
+            productPriceService.recordProductPrice(product.getId(), product.getPrice());
         }
     }
 
