@@ -62,7 +62,7 @@ public class ProductController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Chỉnh sửa thông tin sản phẩm", description = "Cập nhật sản phẩm theo ID. Tên và mã bắt buộc; slug tự tạo lại từ tên nếu không nhập. Các trường tùy chọn null sẽ xóa giá trị cũ, riêng loại, trạng thái và price giữ nguyên nếu không gửi. categoryIds thay thế toàn bộ danh sách danh mục. Mỗi PUT sản phẩm đã có giá sẽ tự tạo product_price mới, đóng effective_to của bản đang áp dụng và đặt is_present_price=false cho bản cũ, trong cùng transaction. Trả về 404 nếu không tìm thấy, 409 nếu dữ liệu xung đột.")
+    @Operation(summary = "Chỉnh sửa thông tin sản phẩm", description = "Cập nhật sản phẩm theo ID. Tên và mã bắt buộc; slug tự tạo lại từ tên nếu không nhập. Các trường tùy chọn null sẽ xóa giá trị cũ, riêng loại, trạng thái và price giữ nguyên nếu không gửi. categoryIds thay thế toàn bộ danh sách danh mục. Khi price thay đổi, cập nhật giá sản phẩm, đóng bản product_price đang áp dụng với effective_to=now và is_present_price=false, rồi tạo bản mới với effective_from=now và is_present_price=true trong cùng transaction. Giữ nguyên số tiền và thông tin tạo của bản giá cũ. Không đổi giá thì không tạo lịch sử mới. Trả về 404 nếu không tìm thấy, 409 nếu dữ liệu xung đột.")
     public ResponseEntity<ProductResponse> updateProduct(
             @Parameter(description = "ID sản phẩm cần sửa") @PathVariable Long id,
             @Valid @RequestBody ProductUpdateRequest req

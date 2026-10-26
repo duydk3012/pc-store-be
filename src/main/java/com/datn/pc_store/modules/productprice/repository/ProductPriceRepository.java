@@ -13,14 +13,6 @@ public interface ProductPriceRepository extends JpaRepository<ProductPrice, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<ProductPrice> findByProductIdAndPresentPriceTrue(Long productId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-        SELECT p FROM ProductPrice p WHERE p.productId=:productId AND p.presentPrice=true
-          AND (p.effectiveFrom IS NULL OR p.effectiveFrom<=:at)
-          AND (p.effectiveTo IS NULL OR p.effectiveTo>:at)
-        """)
-    List<ProductPrice> findCurrentPricesForUpdate(@Param("productId") Long productId, @Param("at") Instant at);
-
     @Query("""
         SELECT p FROM ProductPrice p WHERE p.productId IN :productIds AND p.presentPrice=true
           AND (p.effectiveFrom IS NULL OR p.effectiveFrom<=:at)
