@@ -56,7 +56,7 @@ public class ProductController {
     }
 
     @PostMapping
-    @Operation(summary = "Thêm mới sản phẩm", description = "Tạo sản phẩm và liên kết danh mục, tự tạo slug từ tên nếu không nhập. Mặc định loại COMPONENT và trạng thái ACTIVE. Trả về 201 khi thành công, 400 khi dữ liệu sai, 404 khi thương hiệu/danh mục không tồn tại, 409 khi mã hoặc slug trùng.")
+    @Operation(summary = "Thêm mới sản phẩm", description = "Tạo sản phẩm và liên kết danh mục, tự tạo slug từ tên nếu không nhập. Mặc định loại OTHER (0 - sản phẩm khác) và trạng thái ACTIVE (1). Trả về 201 khi thành công, 400 khi dữ liệu sai, 404 khi thương hiệu/danh mục không tồn tại, 409 khi mã hoặc slug trùng.")
     public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody ProductCreateRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(productService.createProduct(req));
     }

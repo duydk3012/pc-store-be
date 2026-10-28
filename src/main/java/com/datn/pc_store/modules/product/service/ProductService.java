@@ -80,7 +80,7 @@ public class ProductService {
         product.setSlug(slug);
         if (req.getPrice() != null) product.setPrice(req.getPrice().longValueExact());
         product.setStatus(req.getStatus() == null ? ProductStatus.ACTIVE : req.getStatus());
-        product.setProductType(req.getProductType() == null ? ProductType.COMPONENT : req.getProductType());
+        product.setProductType(req.getProductType() == null ? ProductType.OTHER : req.getProductType());
         Product saved = productRepository.save(product);
         replaceCategories(saved.getId(), req.getCategoryIds(), req.getPrimaryCategoryId());
         recordPrice(saved);

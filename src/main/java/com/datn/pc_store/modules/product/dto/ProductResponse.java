@@ -27,7 +27,7 @@ public class ProductResponse {
     private String description;
     @Schema(description = "Thông số kỹ thuật", example = "VRAM: 12GB GDDR7")
     private String specification;
-    @Schema(description = "Loại sản phẩm", example = "COMPONENT")
+    @Schema(description = "Loại sản phẩm", example = "OTHER")
     private ProductType productType;
     @Schema(description = "Trạng thái sản phẩm", example = "ACTIVE")
     private ProductStatus status;

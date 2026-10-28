@@ -39,7 +39,7 @@ public class Product extends BaseEntity {
 
     @Column(name = "product_type", nullable = false)
     @Builder.Default
-    private ProductType productType = ProductType.COMPONENT;
+    private ProductType productType = ProductType.OTHER;
 
     @Column(nullable = false)
     @Builder.Default
