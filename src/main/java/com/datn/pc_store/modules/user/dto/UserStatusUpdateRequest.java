@@ -14,6 +14,6 @@ import lombok.*;
 public class UserStatusUpdateRequest {
 
     @NotNull(message = "Trạng thái không được để trống")
-    @Schema(description = "Trạng thái tài khoản: ACTIVE (hoạt động), INACTIVE (ngưng hoạt động), BANNED (bị cấm)", example = "INACTIVE")
+    @Schema(description = "Trạng thái tài khoản: ACTIVE (1 - hoạt động), INACTIVE (0 - ngưng hoạt động), BANNED (2 - bị cấm)", example = "INACTIVE")
     private UserStatus status;
 }

@@ -1,5 +1,6 @@
 package com.datn.pc_store.modules.goodsreceipt.enums;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 
@@ -23,5 +24,20 @@ public enum GoodsReceiptStatus {
             if (status.value == value) return status;
         }
         throw new IllegalArgumentException("Trạng thái phiếu nhập hàng không hợp lệ: " + value);
+    }
+
+    @JsonCreator
+    public static GoodsReceiptStatus fromJson(Object input) {
+        if (input == null) return null;
+        if (input instanceof Number number) {
+            return fromValue(number.intValue());
+        }
+        String str = input.toString().trim();
+        for (var status : values()) {
+            if (status.name().equalsIgnoreCase(str) || String.valueOf(status.value).equals(str)) {
+                return status;
+            }
+        }
+        throw new IllegalArgumentException("Trạng thái phiếu nhập hàng không hợp lệ: " + str);
     }
 }

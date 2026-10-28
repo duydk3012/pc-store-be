@@ -44,7 +44,7 @@ public class ProductCreateRequest {
     @Schema(description = "Thông số kỹ thuật, tối đa 16000 ký tự (không bắt buộc)", example = "VRAM: 12GB GDDR7; giao tiếp: PCIe")
     private String specification;
 
-    @Schema(description = "Loại sản phẩm: COMPONENT (linh kiện), LAPTOP hoặc PC; mặc định COMPONENT nếu không nhập", example = "COMPONENT")
+    @Schema(description = "Loại sản phẩm: OTHER (0 - sản phẩm khác) hoặc PC (1 - PC); mặc định OTHER nếu không nhập", example = "OTHER")
     private ProductType productType;
 
     @Schema(description = "Trạng thái: INACTIVE (ẩn), ACTIVE (hoạt động), OUT_OF_STOCK (hết hàng); mặc định ACTIVE nếu không nhập", example = "ACTIVE")

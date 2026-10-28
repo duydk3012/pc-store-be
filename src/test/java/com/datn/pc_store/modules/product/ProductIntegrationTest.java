@@ -72,7 +72,7 @@ class ProductIntegrationTest {
                         """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.slug").value("card-man-hinh-asus"))
-                .andExpect(jsonPath("$.productType").value("COMPONENT"))
+                .andExpect(jsonPath("$.productType").value("OTHER"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.categoryIds").isEmpty());
         Product saved = productRepository.findBySlug("card-man-hinh-asus").orElseThrow();
@@ -87,7 +87,7 @@ class ProductIntegrationTest {
         Brand brand = brandRepository.saveAndFlush(Brand.builder().name("ASUS").slug("asus").build());
         Category category = categoryRepository.saveAndFlush(Category.builder().name("Laptop").slug("laptop").build());
         String body = """
-                {"name":"ASUS Laptop","code":"LAPTOP-001","productType":"LAPTOP","brandId":%d,"categoryIds":[%d],"primaryCategoryId":%d}
+                {"name":"ASUS Laptop","code":"LAPTOP-001","productType":"PC","brandId":%d,"categoryIds":[%d],"primaryCategoryId":%d}
                 """.formatted(brand.getId(), category.getId(), category.getId());
         mvc.perform(post("/api/admin/products").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
@@ -96,7 +96,7 @@ class ProductIntegrationTest {
                 .andExpect(jsonPath("$.primaryCategoryId").value(category.getId().intValue()));
         mvc.perform(get("/api/products").with(anonymous()).param("keyword", "ASUS")
                         .param("brandId", brand.getId().toString()).param("categoryId", category.getId().toString())
-                        .param("productType", "LAPTOP").param("status", "ACTIVE"))
+                        .param("productType", "PC").param("status", "ACTIVE"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
         mvc.perform(get("/api/admin/products").param("categoryId", "999999"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
@@ -106,7 +106,7 @@ class ProductIntegrationTest {
     void updateReplacesCategoriesWithoutDuplicateLinksAndPreservesOmittedEnums() throws Exception {
         Category first = categoryRepository.saveAndFlush(Category.builder().name("First").slug("first").build());
         Category second = categoryRepository.saveAndFlush(Category.builder().name("Second").slug("second").build());
-        Product product = saveProduct("Laptop", "LAPTOP", ProductStatus.OUT_OF_STOCK, ProductType.LAPTOP);
+        Product product = saveProduct("Laptop", "LAPTOP", ProductStatus.OUT_OF_STOCK, ProductType.PC);
         String body = """
                 {"name":"Updated Laptop","code":"LAPTOP","categoryIds":[%d,%d],"primaryCategoryId":%d}
                 """.formatted(first.getId(), second.getId(), first.getId());
@@ -114,7 +114,7 @@ class ProductIntegrationTest {
             mvc.perform(put("/api/admin/products/" + product.getId()).contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.categoryIds", hasSize(2)))
                     .andExpect(jsonPath("$.status").value("OUT_OF_STOCK"))
-                    .andExpect(jsonPath("$.productType").value("LAPTOP"));
+                    .andExpect(jsonPath("$.productType").value("PC"));
         }
         mvc.perform(put("/api/admin/products/" + product.getId()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Updated Laptop\",\"code\":\"LAPTOP\"}"))
@@ -145,7 +145,7 @@ class ProductIntegrationTest {
 
     @Test
     void softDeleteHidesProductAndReservesCodeAndSlug() throws Exception {
-        Product product = saveProduct("Deleted", "DELETED", ProductStatus.ACTIVE, ProductType.COMPONENT);
+        Product product = saveProduct("Deleted", "DELETED", ProductStatus.ACTIVE, ProductType.OTHER);
         mvc.perform(delete("/api/admin/products/" + product.getId())).andExpect(status().isNoContent());
         entityManager.flush();
         entityManager.clear();
@@ -180,8 +180,8 @@ class ProductIntegrationTest {
 
     @Test
     void duplicateUpdatesDoNotChangeExistingProduct() throws Exception {
-        saveProduct("First", "FIRST", ProductStatus.ACTIVE, ProductType.COMPONENT);
-        Product second = saveProduct("Second", "SECOND", ProductStatus.ACTIVE, ProductType.COMPONENT);
+        saveProduct("First", "FIRST", ProductStatus.ACTIVE, ProductType.OTHER);
+        Product second = saveProduct("Second", "SECOND", ProductStatus.ACTIVE, ProductType.OTHER);
         for (String body : new String[]{"{\"name\":\"Second\",\"code\":\"FIRST\"}", "{\"name\":\"First\",\"code\":\"SECOND\"}"}) {
             mvc.perform(put("/api/admin/products/" + second.getId()).contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isConflict());
@@ -191,8 +191,8 @@ class ProductIntegrationTest {
 
     @Test
     void validatesSortAndSupportsMultipleSortsAndPagination() throws Exception {
-        saveProduct("Alpha", "A", ProductStatus.ACTIVE, ProductType.COMPONENT);
-        saveProduct("Zulu", "Z", ProductStatus.ACTIVE, ProductType.COMPONENT);
+        saveProduct("Alpha", "A", ProductStatus.ACTIVE, ProductType.OTHER);
+        saveProduct("Zulu", "Z", ProductStatus.ACTIVE, ProductType.OTHER);
         for (String path : new String[]{"/api/products", "/api/admin/products"}) {
             for (String sort : new String[]{"[\"string\"]", "[]", "unknown,desc"}) {
                 mvc.perform(get(path).param("sort", sort)).andExpect(status().isBadRequest());
