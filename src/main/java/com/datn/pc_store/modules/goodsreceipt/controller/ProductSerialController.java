@@ -1,16 +1,20 @@
 package com.datn.pc_store.modules.goodsreceipt.controller;
 
+import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.modules.goodsreceipt.dto.ProductSerialResponse;
+import com.datn.pc_store.modules.goodsreceipt.enums.ProductSerialStatus;
 import com.datn.pc_store.modules.goodsreceipt.service.ProductSerialService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/product-serials")
@@ -38,10 +42,13 @@ public class ProductSerialController {
     }
 
     @GetMapping("/by-product/{productId}")
-    @Operation(summary = "Lấy danh sách serial còn hiệu lực theo sản phẩm", description = "Lọc các serial chưa bị kết thúc (is_terminated = false) của một sản phẩm")
-    public ResponseEntity<List<ProductSerialResponse>> getActiveSerialsByProduct(
-            @Parameter(description = "ID sản phẩm") @PathVariable Long productId
+    @Operation(summary = "Lấy danh sách serial còn hiệu lực theo sản phẩm",
+            description = "Lọc các serial chưa bị kết thúc (is_terminated = false) của một sản phẩm, hỗ trợ lọc theo trạng thái serial và phân trang")
+    public ResponseEntity<PageResponse<ProductSerialResponse>> getActiveSerialsByProduct(
+            @Parameter(description = "ID sản phẩm") @PathVariable Long productId,
+            @Parameter(description = "Lọc theo trạng thái serial sản phẩm") @RequestParam(required = false) ProductSerialStatus status,
+            @ParameterObject @PageableDefault(size = 10, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return ResponseEntity.ok(productSerialService.getActiveSerialsByProduct(productId));
+        return ResponseEntity.ok(productSerialService.getActiveSerialsByProduct(productId, status, pageable));
     }
 }

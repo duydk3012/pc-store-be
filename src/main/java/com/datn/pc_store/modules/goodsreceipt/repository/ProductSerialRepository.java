@@ -1,6 +1,9 @@
 package com.datn.pc_store.modules.goodsreceipt.repository;
 
 import com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial;
+import com.datn.pc_store.modules.goodsreceipt.enums.ProductSerialStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -28,4 +31,16 @@ public interface ProductSerialRepository extends JpaRepository<ProductSerial, Lo
     List<ProductSerial> findAllByGoodsReceiptId(@Param("goodsReceiptId") Long goodsReceiptId);
 
     List<ProductSerial> findAllByProductIdAndIsTerminatedFalse(Long productId);
+
+    @Query("""
+        SELECT ps FROM ProductSerial ps
+        WHERE ps.productId = :productId
+          AND ps.isTerminated = false
+          AND (:status IS NULL OR ps.status = :status)
+    """)
+    Page<ProductSerial> findActiveSerialsByProduct(
+            @Param("productId") Long productId,
+            @Param("status") ProductSerialStatus status,
+            Pageable pageable
+    );
 }

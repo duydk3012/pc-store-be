@@ -3,11 +3,13 @@ package com.datn.pc_store.modules.product.dto;
 import com.datn.pc_store.modules.product.enums.ProductStatus;
 import com.datn.pc_store.modules.product.enums.ProductType;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
-import java.util.Set;
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Set;
 
 @Getter
 @Setter
@@ -63,4 +65,8 @@ public class ProductCreateRequest {
     @Positive(message = "ID danh mục chính phải lớn hơn 0")
     @Schema(description = "ID danh mục chính, phải nằm trong categoryIds; null nếu không chọn danh mục chính", example = "1")
     private Long primaryCategoryId;
+
+    @Schema(description = "Danh sách linh kiện cấu hình PC (bắt buộc khi productType = PC)", example = "[{\"productId\": 10001, \"quantity\": 1}]")
+    @Valid
+    private List<BuildingPcItemRequest> items;
 }

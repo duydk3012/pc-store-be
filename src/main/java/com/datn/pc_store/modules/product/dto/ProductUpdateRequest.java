@@ -1,20 +1,21 @@
 package com.datn.pc_store.modules.product.dto;
 
 import com.datn.pc_store.modules.product.enums.ProductStatus;
-import com.datn.pc_store.modules.product.enums.ProductType;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
-import java.util.Set;
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Set;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Schema(description = "Yêu cầu cập nhật sản phẩm; trường tùy chọn null sẽ xóa giá trị cũ, riêng loại, trạng thái và giá giữ nguyên nếu không gửi")
+@Schema(description = "Yêu cầu cập nhật sản phẩm; trường tùy chọn null sẽ xóa giá trị cũ, riêng trạng thái và giá giữ nguyên nếu không gửi. Loại sản phẩm (productType) không thể thay đổi sau khi tạo")
 public class ProductUpdateRequest {
     @NotBlank(message = "Tên sản phẩm không được để trống")
     @Size(max = 255, message = "Tên sản phẩm tối đa 255 ký tự")
@@ -44,9 +45,6 @@ public class ProductUpdateRequest {
     @Schema(description = "Thông số kỹ thuật, tối đa 16000 ký tự (không bắt buộc)", example = "VRAM: 12GB GDDR7; giao tiếp: PCIe")
     private String specification;
 
-    @Schema(description = "Loại sản phẩm: OTHER (0 - sản phẩm khác) hoặc PC (1 - PC); giữ nguyên nếu không nhập", example = "OTHER")
-    private ProductType productType;
-
     @Schema(description = "Trạng thái: INACTIVE (ẩn), ACTIVE (hoạt động), OUT_OF_STOCK (hết hàng); giữ nguyên nếu không nhập", example = "ACTIVE")
     private ProductStatus status;
 
@@ -63,4 +61,8 @@ public class ProductUpdateRequest {
     @Positive(message = "ID danh mục chính phải lớn hơn 0")
     @Schema(description = "ID danh mục chính, phải nằm trong categoryIds; null nếu không chọn danh mục chính", example = "1")
     private Long primaryCategoryId;
+
+    @Schema(description = "Danh sách linh kiện cấu hình PC (chỉ áp dụng cho sản phẩm loại PC; nếu không truyền thì giữ nguyên cấu hình hiện tại)", example = "[{\"productId\": 10001, \"quantity\": 1}]")
+    @Valid
+    private List<BuildingPcItemRequest> items;
 }
