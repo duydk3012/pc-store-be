@@ -79,7 +79,8 @@ class CategoryControllerTest {
         mockMvc.perform(get("/api/admin/categories")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].name").value("Linh kiện máy tính"));
+                .andExpect(jsonPath("$.content[0].name").value("Linh kiện máy tính"))
+                .andExpect(jsonPath("$.content[0].status").value("ACTIVE"));
     }
 
     @Test
@@ -95,7 +96,8 @@ class CategoryControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name").value("Linh kiện máy tính"));
+                .andExpect(jsonPath("$.name").value("Linh kiện máy tính"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
     }
 
     @Test

@@ -27,6 +27,6 @@ public class BrandUpdateRequest {
     @Schema(description = "Mô tả thương hiệu", example = "Republic of Gamers - Dòng sản phẩm chuyên game của ASUS")
     private String description;
 
-    @Schema(description = "Trạng thái thương hiệu (ACTIVE: 1, INACTIVE: 0)", example = "ACTIVE")
+    @Schema(description = "Trạng thái thương hiệu: INACTIVE (0), ACTIVE (1)", example = "ACTIVE")
     private BrandStatus status;
 }
