@@ -8,11 +8,11 @@ public class CategoryStatusConverter implements AttributeConverter<CategoryStatu
 
     @Override
     public Integer convertToDatabaseColumn(CategoryStatus attribute) {
-        return attribute == null ? CategoryStatus.ACTIVE.getValue() : attribute.getValue();
+        return attribute != null ? attribute.getValue() : null;
     }
 
     @Override
     public CategoryStatus convertToEntityAttribute(Integer dbData) {
-        return dbData == null ? CategoryStatus.ACTIVE : CategoryStatus.fromValue(dbData);
+        return dbData != null ? CategoryStatus.fromValue(dbData) : null;
     }
 }

@@ -48,7 +48,7 @@ public class Product extends BaseEntity {
     @Column(unique = true, length = 255)
     private String slug;
 
-    @Column(name = "image_url", length = 500)
+    @Column(name = "image_url", columnDefinition = "LONGTEXT")
     private String imageUrl;
 
     @Column(name = "brand_id")

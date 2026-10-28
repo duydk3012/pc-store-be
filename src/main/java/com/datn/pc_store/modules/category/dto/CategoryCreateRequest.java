@@ -27,7 +27,7 @@ public class CategoryCreateRequest {
     @Schema(description = "Mô tả chi tiết danh mục", example = "Các loại linh kiện phần cứng máy tính để bàn và laptop")
     private String description;
 
-    @Schema(description = "Trạng thái danh mục (ACTIVE: 1, INACTIVE: 0)", example = "ACTIVE")
+    @Schema(description = "Trạng thái danh mục: INACTIVE (0), ACTIVE (1); mặc định ACTIVE nếu không nhập", example = "ACTIVE")
     private CategoryStatus status;
 
     @Schema(description = "ID của danh mục cha (để trống nếu là danh mục gốc cấp 1)", example = "1")

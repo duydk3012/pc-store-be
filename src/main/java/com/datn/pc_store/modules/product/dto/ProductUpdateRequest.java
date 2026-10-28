@@ -50,8 +50,7 @@ public class ProductUpdateRequest {
     @Schema(description = "Trạng thái: INACTIVE (ẩn), ACTIVE (hoạt động), OUT_OF_STOCK (hết hàng); giữ nguyên nếu không nhập", example = "ACTIVE")
     private ProductStatus status;
 
-    @Size(max = 500, message = "Đường dẫn ảnh tối đa 500 ký tự")
-    @Schema(description = "Đường dẫn ảnh sản phẩm, tối đa 500 ký tự (không bắt buộc)", example = "https://example.com/images/rtx5070.jpg")
+    @Schema(description = "Đường dẫn ảnh sản phẩm (không bắt buộc)", example = "https://example.com/images/rtx5070.jpg")
     private String imageUrl;
 
     @Positive(message = "ID thương hiệu phải lớn hơn 0")

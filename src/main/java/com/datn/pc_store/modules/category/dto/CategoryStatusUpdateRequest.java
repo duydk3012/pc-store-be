@@ -14,6 +14,6 @@ import lombok.*;
 public class CategoryStatusUpdateRequest {
 
     @NotNull(message = "Trạng thái không được để trống")
-    @Schema(description = "Trạng thái mới của danh mục (ACTIVE: 1, INACTIVE: 0)", example = "ACTIVE")
+    @Schema(description = "Trạng thái mới của danh mục: INACTIVE (0), ACTIVE (1)", example = "ACTIVE")
     private CategoryStatus status;
 }

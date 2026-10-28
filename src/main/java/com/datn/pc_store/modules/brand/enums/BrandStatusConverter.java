@@ -8,11 +8,11 @@ public class BrandStatusConverter implements AttributeConverter<BrandStatus, Int
 
     @Override
     public Integer convertToDatabaseColumn(BrandStatus attribute) {
-        return attribute == null ? BrandStatus.ACTIVE.getValue() : attribute.getValue();
+        return attribute != null ? attribute.getValue() : null;
     }
 
     @Override
     public BrandStatus convertToEntityAttribute(Integer dbData) {
-        return dbData == null ? BrandStatus.ACTIVE : BrandStatus.fromValue(dbData);
+        return dbData != null ? BrandStatus.fromValue(dbData) : null;
     }
 }
