@@ -65,6 +65,17 @@ public class GoodsReceiptController {
         return ResponseEntity.ok(goodsReceiptService.getReceiptByCode(code));
     }
 
+    @GetMapping("/{id}/duplicate-template")
+    @Operation(summary = "Lấy dữ liệu mẫu nhân bản từ phiếu nhập đã hủy hoặc bị từ chối",
+            description = "Dùng cho nhân viên kho (STAFF_WAREHOUSE, MANAGER, ADMIN) khi muốn tạo phiếu nhập mới dựa trên phiếu đã hủy (CANCELLED) hoặc bị từ chối (REJECTED). "
+                    + "API trả về thông tin đã được chuẩn hóa (gợi ý mã mới không trùng, trạng thái DRAFT, thời gian hiện tại, serials được chuẩn hóa GOOD_CONDITION / DEFECTIVE, ...) "
+                    + "để FE tự động điền sẵn vào Form tạo mới.")
+    public ResponseEntity<GoodsReceiptDuplicateResponse> getDuplicateTemplate(
+            @Parameter(description = "ID phiếu nhập gốc (phải ở trạng thái CANCELLED hoặc REJECTED)") @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(goodsReceiptService.getDuplicateTemplate(id));
+    }
+
     @GetMapping("/purchase-orders/{purchaseOrderId}/order-items")
     @Operation(summary = "Lấy danh sách mặt hàng trong đơn đặt hàng (PO)",
             description = "Trả về danh sách các mặt hàng trong đơn đặt hàng cùng số lượng đã nhận và còn lại để chọn khi tạo phiếu nhập.")
