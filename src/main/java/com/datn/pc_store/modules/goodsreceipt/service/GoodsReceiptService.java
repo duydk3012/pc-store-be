@@ -20,6 +20,8 @@ import com.datn.pc_store.modules.purchaseorder.entity.PurchaseOrder;
 import com.datn.pc_store.modules.purchaseorder.entity.PurchaseOrderItem;
 import com.datn.pc_store.modules.purchaseorder.enums.PurchaseOrderStatus;
 import com.datn.pc_store.modules.purchaseorder.repository.PurchaseOrderRepository;
+import com.datn.pc_store.modules.suppliers.entity.Supplier;
+import com.datn.pc_store.modules.suppliers.repository.SupplierRepository;
 import com.datn.pc_store.modules.user.entity.User;
 import com.datn.pc_store.modules.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
@@ -53,6 +55,7 @@ public class GoodsReceiptService {
     private final PurchaseOrderRepository purchaseOrderRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
+    private final SupplierRepository supplierRepository;
     private final GoodsReceiptMapper goodsReceiptMapper;
     private final EntityManager entityManager;
 
@@ -119,6 +122,150 @@ public class GoodsReceiptService {
                 .orElseThrow(() -> new ResourceNotFoundException("Phiếu nhập hàng", "code", code));
         validateReadPermission(receipt);
         return goodsReceiptMapper.toResponse(receipt);
+    }
+
+    @Transactional(readOnly = true)
+    public GoodsReceiptDuplicateResponse getDuplicateTemplate(Long id) {
+        GoodsReceipt receipt = goodsReceiptRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Phiếu nhập hàng", "id", id));
+        validateReadPermission(receipt);
+
+        if (receipt.getStatus() != GoodsReceiptStatus.CANCELLED && receipt.getStatus() != GoodsReceiptStatus.REJECTED) {
+            throw new BadRequestException("Chỉ có thể nhân bản phiếu nhập hàng đã bị hủy (CANCELLED) hoặc bị từ chối (REJECTED). Trạng thái hiện tại: " + receipt.getStatus());
+        }
+
+        PurchaseOrder po = validateAndGetPurchaseOrder(receipt.getPurchaseOrderId());
+
+        Supplier supplier = po.getSupplierId() != null
+                ? supplierRepository.findById(po.getSupplierId()).orElse(null)
+                : null;
+
+        Map<Long, PurchaseOrderItem> poItemMap = po.getItems().stream()
+                .collect(Collectors.toMap(PurchaseOrderItem::getId, i -> i));
+
+        List<Long> productIds = po.getItems().stream()
+                .map(PurchaseOrderItem::getProductId)
+                .distinct()
+                .toList();
+
+        Map<Long, Product> productMap = productRepository.findAllById(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+
+        Set<String> allSerials = receipt.getItems().stream()
+                .filter(i -> i.getProductSerials() != null)
+                .flatMap(i -> i.getProductSerials().stream())
+                .map(ProductSerial::getSerialNumber)
+                .filter(s -> s != null && !s.isBlank())
+                .map(String::trim)
+                .collect(Collectors.toSet());
+
+        Set<String> activeInDb = allSerials.isEmpty()
+                ? Collections.emptySet()
+                : productSerialRepository.findActiveExistingSerialNumbers(allSerials);
+
+        String suggestedCode = generateUniqueDuplicateCode(receipt.getCode());
+        String suggestedName = receipt.getName() != null && !receipt.getName().isBlank()
+                ? receipt.getName() + " (Bản sao)"
+                : "Phiếu nhập hàng (Bản sao)";
+        if (suggestedName.length() > 100) {
+            suggestedName = suggestedName.substring(0, 100);
+        }
+
+        List<ReceiptItemDuplicateResponse> itemResponses = new ArrayList<>();
+        if (receipt.getItems() != null) {
+            for (ReceiptItem item : receipt.getItems()) {
+                PurchaseOrderItem poi = poItemMap.get(item.getPurchaseOrderItemId());
+                Product product = poi != null ? productMap.get(poi.getProductId()) : null;
+
+                List<ProductSerialDuplicateResponse> serialResponses = new ArrayList<>();
+                if (item.getProductSerials() != null) {
+                    for (ProductSerial ps : item.getProductSerials()) {
+                        ProductSerialStatus normalizedStatus =
+                                (ps.getStatus() == ProductSerialStatus.DEFECTIVE || ps.getStatus() == ProductSerialStatus.PENDING_RETURN)
+                                        ? ProductSerialStatus.DEFECTIVE
+                                        : ProductSerialStatus.GOOD_CONDITION;
+
+                        String trimmedSn = ps.getSerialNumber() != null ? ps.getSerialNumber().trim() : "";
+                        boolean inUse = activeInDb.contains(trimmedSn);
+
+                        serialResponses.add(ProductSerialDuplicateResponse.builder()
+                                .serialNumber(ps.getSerialNumber())
+                                .status(normalizedStatus)
+                                .originalStatus(ps.getStatus())
+                                .isAlreadyInUse(inUse)
+                                .build());
+                    }
+                }
+
+                int totalReceived = serialResponses.size();
+                int acceptedCount = (int) serialResponses.stream()
+                        .filter(s -> s.getStatus() == ProductSerialStatus.GOOD_CONDITION).count();
+                int defectiveCount = (int) serialResponses.stream()
+                        .filter(s -> s.getStatus() == ProductSerialStatus.DEFECTIVE).count();
+
+                int orderQty = poi != null ? poi.getQuantityOrder() : 0;
+                int receivedInPo = poi != null ? poi.getQuantityReceived() : 0;
+                int remainingInOrder = poi != null ? Math.max(0, orderQty - receivedInPo) : 0;
+                long unitCostInPo = poi != null ? poi.getUnitCost() : 0;
+
+                itemResponses.add(ReceiptItemDuplicateResponse.builder()
+                        .purchaseOrderItemId(item.getPurchaseOrderItemId())
+                        .productId(poi != null ? poi.getProductId() : null)
+                        .productCode(product != null ? product.getCode() : null)
+                        .productName(product != null ? product.getName() : null)
+                        .actualUnitCost(item.getActualUnitCost())
+                        .unitCost(unitCostInPo)
+                        .quantityOrder(orderQty)
+                        .quantityReceivedInPo(receivedInPo)
+                        .remainingQuantityInOrder(remainingInOrder)
+                        .quantityReceived(totalReceived)
+                        .quantityAccepted(acceptedCount)
+                        .quantityDefective(defectiveCount)
+                        .productSerials(serialResponses)
+                        .build());
+            }
+        }
+
+        return GoodsReceiptDuplicateResponse.builder()
+                .originalReceiptId(receipt.getId())
+                .originalReceiptCode(receipt.getCode())
+                .code(suggestedCode)
+                .name(suggestedName)
+                .purchaseOrderId(po.getId())
+                .purchaseOrderCode(po.getCode())
+                .supplierId(supplier != null ? supplier.getId() : po.getSupplierId())
+                .supplierName(supplier != null ? supplier.getName() : null)
+                .receivedAt(Instant.now())
+                .status(GoodsReceiptStatus.DRAFT)
+                .items(itemResponses)
+                .build();
+    }
+
+    private String generateUniqueDuplicateCode(String originalCode) {
+        String baseSuffix = "-DUP";
+        String baseCode = originalCode != null ? originalCode.trim() : "GR";
+        if (baseCode.length() + baseSuffix.length() > 50) {
+            baseCode = baseCode.substring(0, 50 - baseSuffix.length());
+        }
+        String candidate = baseCode + baseSuffix;
+        if (goodsReceiptRepository.countByCode(candidate, null) == 0) {
+            return candidate;
+        }
+
+        int counter = 1;
+        while (counter < 1000) {
+            String suffix = "-DUP" + counter;
+            String trimmedBase = originalCode != null ? originalCode.trim() : "GR";
+            if (trimmedBase.length() + suffix.length() > 50) {
+                trimmedBase = trimmedBase.substring(0, 50 - suffix.length());
+            }
+            candidate = trimmedBase + suffix;
+            if (goodsReceiptRepository.countByCode(candidate, null) == 0) {
+                return candidate;
+            }
+            counter++;
+        }
+        return "GR-" + System.currentTimeMillis();
     }
 
     @Transactional(readOnly = true)

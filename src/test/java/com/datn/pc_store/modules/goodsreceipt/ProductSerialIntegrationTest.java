@@ -1,12 +1,24 @@
 package com.datn.pc_store.modules.goodsreceipt;
 
+import com.datn.pc_store.modules.goodsreceipt.entity.GoodsReceipt;
 import com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial;
+import com.datn.pc_store.modules.goodsreceipt.entity.ReceiptItem;
+import com.datn.pc_store.modules.goodsreceipt.enums.GoodsReceiptStatus;
 import com.datn.pc_store.modules.goodsreceipt.enums.ProductSerialStatus;
+import com.datn.pc_store.modules.goodsreceipt.repository.GoodsReceiptRepository;
 import com.datn.pc_store.modules.goodsreceipt.repository.ProductSerialRepository;
+import com.datn.pc_store.modules.goodsreceipt.repository.ReceiptItemRepository;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.product.enums.ProductStatus;
 import com.datn.pc_store.modules.product.enums.ProductType;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
+import com.datn.pc_store.modules.purchaseorder.entity.PurchaseOrder;
+import com.datn.pc_store.modules.purchaseorder.entity.PurchaseOrderItem;
+import com.datn.pc_store.modules.purchaseorder.enums.PurchaseOrderStatus;
+import com.datn.pc_store.modules.purchaseorder.repository.PurchaseOrderRepository;
+import com.datn.pc_store.modules.suppliers.entity.Supplier;
+import com.datn.pc_store.modules.suppliers.enums.SupplierStatus;
+import com.datn.pc_store.modules.suppliers.repository.SupplierRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +28,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
+
+import java.time.Instant;
+import java.util.List;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
@@ -40,6 +55,10 @@ class ProductSerialIntegrationTest {
     @Autowired private WebApplicationContext context;
     @Autowired private ProductRepository productRepository;
     @Autowired private ProductSerialRepository productSerialRepository;
+    @Autowired private SupplierRepository supplierRepository;
+    @Autowired private PurchaseOrderRepository purchaseOrderRepository;
+    @Autowired private GoodsReceiptRepository goodsReceiptRepository;
+    @Autowired private ReceiptItemRepository receiptItemRepository;
 
     private MockMvc mvc;
     private Product product;
@@ -136,5 +155,83 @@ class ProductSerialIntegrationTest {
         // 5. Sort không hợp lệ -> 400
         mvc.perform(get("/api/product-serials/by-product/" + product.getId()).param("sort", "invalidField,desc"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void searchSerialsComprehensiveEndpoint() throws Exception {
+        Supplier sup = supplierRepository.save(Supplier.builder()
+                .code("SUP-SERIAL-01")
+                .name("Supplier Test Serials")
+                .email("sup_serials@test.com")
+                .status(SupplierStatus.ACTIVE)
+                .build());
+
+        PurchaseOrder po = PurchaseOrder.builder()
+                .code("PO-SERIAL-01")
+                .supplierId(sup.getId())
+                .status(PurchaseOrderStatus.RECEIVED)
+                .build();
+        PurchaseOrderItem poi = PurchaseOrderItem.builder()
+                .purchaseOrder(po)
+                .productId(product.getId())
+                .quantityOrder(5)
+                .unitCost(1000000L)
+                .build();
+        po.getItems().add(poi);
+        PurchaseOrder savedPo = purchaseOrderRepository.saveAndFlush(po);
+        Long poiId = savedPo.getItems().get(0).getId();
+
+        GoodsReceipt gr = goodsReceiptRepository.save(GoodsReceipt.builder()
+                .code("GR-SERIAL-01")
+                .purchaseOrderId(savedPo.getId())
+                .status(GoodsReceiptStatus.CONFIRMED)
+                .receivedAt(Instant.now())
+                .build());
+
+        ReceiptItem ri = receiptItemRepository.save(ReceiptItem.builder()
+                .goodsReceipt(gr)
+                .purchaseOrderItemId(poiId)
+                .actualUnitCost(1000000L)
+                .quantityReceived(2)
+                .quantityAccepted(2)
+                .build());
+
+        productSerialRepository.saveAndFlush(ProductSerial.builder()
+                .productId(product.getId())
+                .receiptItem(ri)
+                .serialNumber("SN-SUP-MATCH-01")
+                .status(ProductSerialStatus.IN_STOCK)
+                .isTerminated(false)
+                .build());
+
+        productSerialRepository.saveAndFlush(ProductSerial.builder()
+                .productId(product.getId())
+                .receiptItem(ri)
+                .serialNumber("SN-SUP-MATCH-02")
+                .status(ProductSerialStatus.DEFECTIVE)
+                .isTerminated(false)
+                .build());
+
+        // 1. Search by supplierId only
+        mvc.perform(get("/api/product-serials").param("supplierId", sup.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+
+        // 2. Search by supplierId and status = DEFECTIVE
+        mvc.perform(get("/api/product-serials")
+                        .param("supplierId", sup.getId().toString())
+                        .param("status", "DEFECTIVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].serialNumber").value("SN-SUP-MATCH-02"));
+
+        // 3. Search by keyword
+        mvc.perform(get("/api/product-serials")
+                        .param("supplierId", sup.getId().toString())
+                        .param("keyword", "MATCH-01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].serialNumber").value("SN-SUP-MATCH-01"));
     }
 }

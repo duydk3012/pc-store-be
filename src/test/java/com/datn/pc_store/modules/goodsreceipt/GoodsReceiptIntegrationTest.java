@@ -663,6 +663,163 @@ class GoodsReceiptIntegrationTest {
                 .andExpect(status().isNoContent());
     }
 
+    @Test
+    void getDuplicateTemplate_whenCancelledReceipt_returnsValidTemplate() throws Exception {
+        GoodsReceiptResponse original = createReceiptForUser("GR-DUP-01", "wh1");
+        // wh1 cancels receipt
+        mvc.perform(patch("/api/goods-receipts/" + original.getId() + "/status")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"CANCELLED\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/goods-receipts/" + original.getId() + "/duplicate-template")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.originalReceiptId").value(original.getId()))
+                .andExpect(jsonPath("$.originalReceiptCode").value("GR-DUP-01"))
+                .andExpect(jsonPath("$.code").value("GR-DUP-01-DUP"))
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.purchaseOrderId").value(approvedPoId))
+                .andExpect(jsonPath("$.purchaseOrderCode").value("PO-TEST-001"))
+                .andExpect(jsonPath("$.supplierName").value("NCC Test"))
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].purchaseOrderItemId").value(poiId1))
+                .andExpect(jsonPath("$.items[0].productCode").value("CPU-01"))
+                .andExpect(jsonPath("$.items[0].productName").value("CPU Intel i9"))
+                .andExpect(jsonPath("$.items[0].productSerials", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].productSerials[0].serialNumber").value("SN-GR-DUP-01"))
+                .andExpect(jsonPath("$.items[0].productSerials[0].status").value("GOOD_CONDITION"))
+                .andExpect(jsonPath("$.items[0].productSerials[0].isAlreadyInUse").value(false));
+    }
+
+    @Test
+    void getDuplicateTemplate_whenRejectedReceipt_returnsValidTemplate() throws Exception {
+        GoodsReceiptResponse original = createReceiptForUser("GR-REJ-01", "wh1");
+        // manager rejects
+        mvc.perform(patch("/api/goods-receipts/" + original.getId() + "/status")
+                        .with(user("mgr").roles("MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"REJECTED\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/goods-receipts/" + original.getId() + "/duplicate-template")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.originalReceiptId").value(original.getId()))
+                .andExpect(jsonPath("$.code").value("GR-REJ-01-DUP"))
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.items[0].productSerials[0].serialNumber").value("SN-GR-REJ-01"))
+                .andExpect(jsonPath("$.items[0].productSerials[0].status").value("GOOD_CONDITION"));
+    }
+
+    @Test
+    void getDuplicateTemplate_whenPendingOrConfirmedOrDraft_returnsBadRequest() throws Exception {
+        // Pending
+        GoodsReceiptResponse pending = createReceiptForUser("GR-PEND-01", "wh1");
+        mvc.perform(get("/api/goods-receipts/" + pending.getId() + "/duplicate-template")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail", containsString("Chỉ có thể nhân bản phiếu nhập hàng đã bị hủy")));
+
+        // Draft
+        GoodsReceiptResponse draft = createDraftReceiptForUser("GR-DRF-01", "wh1");
+        mvc.perform(get("/api/goods-receipts/" + draft.getId() + "/duplicate-template")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail", containsString("Chỉ có thể nhân bản phiếu nhập hàng đã bị hủy")));
+
+        // Confirmed
+        mvc.perform(patch("/api/goods-receipts/" + pending.getId() + "/status")
+                        .with(user("mgr").roles("MANAGER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"CONFIRMED\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/goods-receipts/" + pending.getId() + "/duplicate-template")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail", containsString("Chỉ có thể nhân bản phiếu nhập hàng đã bị hủy")));
+    }
+
+    @Test
+    void getDuplicateTemplate_whenCodeCollision_incrementsSuffix() throws Exception {
+        GoodsReceiptResponse original = createReceiptForUser("GR-COL-01", "wh1");
+        mvc.perform(patch("/api/goods-receipts/" + original.getId() + "/status")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"CANCELLED\"}"))
+                .andExpect(status().isOk());
+
+        // Pre-create receipt with code GR-COL-01-DUP
+        createDraftReceiptForUser("GR-COL-01-DUP", "wh1");
+
+        // Now duplicating original should yield GR-COL-01-DUP1
+        mvc.perform(get("/api/goods-receipts/" + original.getId() + "/duplicate-template")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("GR-COL-01-DUP1"));
+    }
+
+    @Test
+    void getDuplicateTemplate_staffWarehouseCannotDuplicateOthersReceipt() throws Exception {
+        GoodsReceiptResponse original = createReceiptForUser("GR-OTHER-01", "wh1");
+        mvc.perform(patch("/api/goods-receipts/" + original.getId() + "/status")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"CANCELLED\"}"))
+                .andExpect(status().isOk());
+
+        // wh2 attempts to duplicate wh1's cancelled receipt -> 404 (not found / forbidden)
+        mvc.perform(get("/api/goods-receipts/" + original.getId() + "/duplicate-template")
+                        .with(user("wh2").roles("STAFF_WAREHOUSE")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void duplicateAndCreateNewReceiptFlow_succeedsWithReusedSerials() throws Exception {
+        GoodsReceiptResponse original = createReceiptForUser("GR-REUSE-01", "wh1");
+        mvc.perform(patch("/api/goods-receipts/" + original.getId() + "/status")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"CANCELLED\"}"))
+                .andExpect(status().isOk());
+
+        // Get duplicate template
+        String templateJson = mvc.perform(get("/api/goods-receipts/" + original.getId() + "/duplicate-template")
+                        .with(user("wh1").roles("STAFF_WAREHOUSE")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        String dupCode = com.jayway.jsonpath.JsonPath.read(templateJson, "$.code");
+        assertThat(dupCode).isEqualTo("GR-REUSE-01-DUP");
+
+        // Submit new receipt creation using the template's code and serials
+        String createPayload = """
+                {
+                    "code": "%s",
+                    "purchaseOrderId": %d,
+                    "status": "PENDING",
+                    "items": [
+                        {
+                            "purchaseOrderItemId": %d,
+                            "actualUnitCost": 10000000,
+                            "productSerials": [
+                                {"serialNumber": "SN-GR-REUSE-01", "status": "GOOD_CONDITION"}
+                            ]
+                        }
+                    ]
+                }
+                """.formatted(dupCode, approvedPoId, poiId1);
+
+        mvc.perform(post("/api/goods-receipts").with(user("wh1").roles("STAFF_WAREHOUSE"))
+                        .contentType(MediaType.APPLICATION_JSON).content(createPayload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("GR-REUSE-01-DUP"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.items[0].productSerials[0].serialNumber").value("SN-GR-REUSE-01"));
+    }
+
     private GoodsReceiptResponse createReceiptForUser(String code, String username) throws Exception {
         String body = """
                 {

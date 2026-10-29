@@ -25,6 +25,19 @@ public class ProductSerialController {
 
     private final ProductSerialService productSerialService;
 
+    @GetMapping
+    @Operation(summary = "Xem danh sách và tìm kiếm serial sản phẩm",
+            description = "Tra cứu danh sách serial sản phẩm phân trang, lọc theo nhà cung cấp (supplierId), sản phẩm (productId), trạng thái (status), từ khóa serial number (keyword).")
+    public ResponseEntity<PageResponse<ProductSerialResponse>> searchSerials(
+            @Parameter(description = "ID nhà cung cấp") @RequestParam(required = false) Long supplierId,
+            @Parameter(description = "ID sản phẩm") @RequestParam(required = false) Long productId,
+            @Parameter(description = "Trạng thái serial sản phẩm") @RequestParam(required = false) ProductSerialStatus status,
+            @Parameter(description = "Từ khóa tìm theo số serial") @RequestParam(required = false) String keyword,
+            @ParameterObject @PageableDefault(size = 10, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return ResponseEntity.ok(productSerialService.searchSerials(supplierId, productId, status, keyword, pageable));
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Xem thông tin serial theo ID", description = "Tra cứu thông tin serial sản phẩm theo ID")
     public ResponseEntity<ProductSerialResponse> getById(
