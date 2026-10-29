@@ -43,4 +43,36 @@ public interface ProductSerialRepository extends JpaRepository<ProductSerial, Lo
             @Param("status") ProductSerialStatus status,
             Pageable pageable
     );
+
+    @Query(value = """
+        SELECT ps FROM ProductSerial ps
+        LEFT JOIN ps.receiptItem ri
+        LEFT JOIN ri.goodsReceipt gr
+        LEFT JOIN PurchaseOrder po ON po.id = gr.purchaseOrderId
+        WHERE ps.isTerminated = false
+          AND (:supplierId IS NULL OR po.supplierId = :supplierId)
+          AND (:productId IS NULL OR ps.productId = :productId)
+          AND (:status IS NULL OR ps.status = :status)
+          AND (:keyword IS NULL OR :keyword = ''
+               OR LOWER(ps.serialNumber) LIKE LOWER(CONCAT('%', :keyword, '%')))
+    """,
+    countQuery = """
+        SELECT COUNT(ps) FROM ProductSerial ps
+        LEFT JOIN ps.receiptItem ri
+        LEFT JOIN ri.goodsReceipt gr
+        LEFT JOIN PurchaseOrder po ON po.id = gr.purchaseOrderId
+        WHERE ps.isTerminated = false
+          AND (:supplierId IS NULL OR po.supplierId = :supplierId)
+          AND (:productId IS NULL OR ps.productId = :productId)
+          AND (:status IS NULL OR ps.status = :status)
+          AND (:keyword IS NULL OR :keyword = ''
+               OR LOWER(ps.serialNumber) LIKE LOWER(CONCAT('%', :keyword, '%')))
+    """)
+    Page<ProductSerial> searchSerials(
+            @Param("supplierId") Long supplierId,
+            @Param("productId") Long productId,
+            @Param("status") ProductSerialStatus status,
+            @Param("keyword") String keyword,
+            Pageable pageable
+    );
 }
