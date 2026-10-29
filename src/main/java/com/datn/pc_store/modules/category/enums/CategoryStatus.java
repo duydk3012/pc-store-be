@@ -1,10 +1,11 @@
 package com.datn.pc_store.modules.category.enums;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 
 @Getter
+@Schema(description = "Trạng thái danh mục: INACTIVE (0), ACTIVE (1)")
 public enum CategoryStatus {
     INACTIVE(0),
     ACTIVE(1);
@@ -15,23 +16,24 @@ public enum CategoryStatus {
         this.value = value;
     }
 
-    @JsonValue
-    public int getValue() {
-        return value;
+    public static CategoryStatus fromValue(int value) {
+        for (CategoryStatus s : values()) {
+            if (s.value == value) {
+                return s;
+            }
+        }
+        throw new IllegalArgumentException("Trạng thái danh mục không hợp lệ: " + value);
+    }
+
+    public static CategoryStatus fromValue(Object input) {
+        return fromJson(input);
     }
 
     @JsonCreator
-    public static CategoryStatus fromValue(Object input) {
-        if (input == null) {
-            return ACTIVE;
-        }
+    public static CategoryStatus fromJson(Object input) {
+        if (input == null) return null;
         if (input instanceof Number number) {
-            int v = number.intValue();
-            for (CategoryStatus s : values()) {
-                if (s.value == v) {
-                    return s;
-                }
-            }
+            return fromValue(number.intValue());
         }
         String str = input.toString().trim();
         for (CategoryStatus s : values()) {
@@ -39,6 +41,6 @@ public enum CategoryStatus {
                 return s;
             }
         }
-        return ACTIVE;
+        throw new IllegalArgumentException("Trạng thái danh mục không hợp lệ: " + str);
     }
 }

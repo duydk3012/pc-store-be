@@ -27,6 +27,6 @@ public class BrandCreateRequest {
     @Schema(description = "Mô tả thương hiệu", example = "Tập đoàn công nghệ đa quốc gia sản xuất phần cứng máy tính và điện tử hàng đầu")
     private String description;
 
-    @Schema(description = "Trạng thái thương hiệu (ACTIVE: 1, INACTIVE: 0)", example = "ACTIVE")
+    @Schema(description = "Trạng thái thương hiệu: INACTIVE (0), ACTIVE (1); mặc định ACTIVE nếu không nhập", example = "ACTIVE")
     private BrandStatus status;
 }

@@ -1,36 +1,5 @@
-<<<<<<<< HEAD:src/main/resources/db/migration/V3__create_inventory_tables.sql
--- V3__create_inventory_tables.sql
--- Phân hệ Inventory & Purchasing: suppliers, purchase_orders, purchase_order_items, goods_receipts, receipt_items, product_serials, purchase_returns, purchase_return_items, delivery
-
-CREATE TABLE suppliers (
-    id                  BIGINT        NOT NULL AUTO_INCREMENT,
-    code                VARCHAR(50)   NOT NULL,
-    name                VARCHAR(100)  NOT NULL,
-    contact_person      VARCHAR(255)  NULL,
-    email               VARCHAR(100)  NOT NULL,
-    phone_number        VARCHAR(20)   NULL,
-    address             VARCHAR(500)  NULL,
-    tax_code            VARCHAR(50)   NULL,
-    status              VARCHAR(20)   NOT NULL DEFAULT 'ACTIVE',
-    is_deleted          TINYINT(1)    NOT NULL DEFAULT 0,
-    created_by          BIGINT        NULL,
-    created_date        DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    last_modified_by    BIGINT        NULL,
-    last_modified_date  DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (id),
-    CONSTRAINT uk_suppliers_code UNIQUE (code),
-    CONSTRAINT uk_suppliers_email UNIQUE (email),
-    CONSTRAINT chk_suppliers_status CHECK (status IN ('ACTIVE', 'INACTIVE'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE INDEX idx_suppliers_status ON suppliers (status);
-CREATE INDEX idx_suppliers_name ON suppliers (name);
-CREATE INDEX idx_suppliers_phone ON suppliers (phone_number);
-CREATE INDEX idx_suppliers_tax_code ON suppliers (tax_code);
-========
 -- V6__create_inventory_tables.sql
 -- Module Inventory & Purchasing: purchase_orders, purchase_order_items, goods_receipts, receipt_items, product_serials, purchase_returns, purchase_return_items
->>>>>>>> main:src/main/resources/db/migration/V6__create_inventory_tables.sql
 
 CREATE TABLE purchase_orders (
     id                  BIGINT        NOT NULL AUTO_INCREMENT,
@@ -175,23 +144,3 @@ CREATE TABLE purchase_return_items (
 
 CREATE INDEX idx_pri_return ON purchase_return_items (purchase_return_id);
 CREATE INDEX idx_pri_serial ON purchase_return_items (product_serial_id);
-
-CREATE TABLE delivery (
-    id              BIGINT        NOT NULL AUTO_INCREMENT,
-    resource_type   VARCHAR(30)   NOT NULL COMMENT 'ORDER, PURCHASE_RETURN',
-    resource_id     BIGINT        NOT NULL,
-    tracking_code   VARCHAR(100)  NULL,
-    carrier_name    VARCHAR(255)  NULL,
-    shipping_fee    BIGINT        NOT NULL DEFAULT 0,
-    status          TINYINT       NOT NULL DEFAULT 0 COMMENT '0: picked_up, 1: in_transit, 2: delivered, 3: returned',
-    shipped_date    DATETIME(6)   NULL,
-    shipped_by      BIGINT        NULL,
-    delivered_date  DATETIME(6)   NULL,
-    PRIMARY KEY (id),
-    CONSTRAINT fk_delivery_shipped_by FOREIGN KEY (shipped_by) REFERENCES users (id) ON DELETE SET NULL,
-    CONSTRAINT chk_delivery_resource_type CHECK (resource_type IN ('ORDER', 'PURCHASE_RETURN'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE INDEX idx_delivery_resource ON delivery (resource_type, resource_id);
-CREATE INDEX idx_delivery_tracking ON delivery (tracking_code);
-CREATE INDEX idx_delivery_status ON delivery (status);

@@ -34,7 +34,7 @@ public class CategoryController {
     public ResponseEntity<PageResponse<CategoryResponse>> getAllCategories(
             @Parameter(description = "Từ khóa tìm kiếm (tên, slug, mô tả)")
             @RequestParam(required = false) String keyword,
-            @Parameter(description = "Lọc theo trạng thái (ACTIVE: 1, INACTIVE: 0)")
+            @Parameter(description = "Lọc theo trạng thái (ACTIVE, INACTIVE)")
             @RequestParam(required = false) CategoryStatus status,
             @Parameter(description = "Lọc theo ID danh mục cha")
             @RequestParam(required = false) Long parentId,
@@ -93,7 +93,7 @@ public class CategoryController {
 
     @PatchMapping("/{id}/status")
     @Operation(summary = "Chuyển trạng thái danh mục",
-               description = "Cập nhật trạng thái hoạt động (ACTIVE: 1 hoặc INACTIVE: 0) của danh mục.")
+               description = "Cập nhật trạng thái hoạt động (ACTIVE hoặc INACTIVE) của danh mục.")
     public ResponseEntity<CategoryResponse> updateStatus(
             @Parameter(description = "ID danh mục")
             @PathVariable Long id,

@@ -74,7 +74,8 @@ class BrandControllerTest {
         mockMvc.perform(get("/api/admin/brands")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].name").value("ASUS"));
+                .andExpect(jsonPath("$.content[0].name").value("ASUS"))
+                .andExpect(jsonPath("$.content[0].status").value("ACTIVE"));
     }
 
     @Test
@@ -90,7 +91,8 @@ class BrandControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name").value("ASUS"));
+                .andExpect(jsonPath("$.name").value("ASUS"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
     }
 
     @Test

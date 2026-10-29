@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 
 @Getter
@@ -27,7 +28,7 @@ public class ProductResponse {
     private String description;
     @Schema(description = "Thông số kỹ thuật", example = "VRAM: 12GB GDDR7")
     private String specification;
-    @Schema(description = "Loại sản phẩm", example = "COMPONENT")
+    @Schema(description = "Loại sản phẩm", example = "OTHER")
     private ProductType productType;
     @Schema(description = "Trạng thái sản phẩm", example = "ACTIVE")
     private ProductStatus status;
@@ -43,6 +44,8 @@ public class ProductResponse {
     private Long price;
     @Schema(description = "ID phiên bản giá hiện tại; null nếu chưa có giá đang hiệu lực", example = "1")
     private Long priceId;
+    @Schema(description = "Danh sách linh kiện cấu hình (áp dụng cho sản phẩm loại PC); null nếu là sản phẩm khác")
+    private List<BuildingPcItemResponse> items;
     @Schema(description = "Thời gian tạo")
     private Instant createdDate;
     @Schema(description = "ID người tạo")

@@ -18,6 +18,6 @@ import lombok.Setter;
 public class SupplierStatusUpdateRequest {
 
     @NotNull(message = "Trạng thái nhà cung cấp không được để trống")
-    @Schema(description = "Trạng thái mới của nhà cung cấp", example = "INACTIVE")
+    @Schema(description = "Trạng thái mới của nhà cung cấp: ACTIVE (1 - hoạt động), INACTIVE (0 - ngưng hoạt động)", example = "INACTIVE")
     private SupplierStatus status;
 }

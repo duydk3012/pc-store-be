@@ -43,8 +43,7 @@ public class Supplier extends BaseEntity {
     @Column(name = "tax_code", length = 50)
     private String taxCode;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(name = "status", nullable = false)
     @Builder.Default
     private SupplierStatus status = SupplierStatus.ACTIVE;
 

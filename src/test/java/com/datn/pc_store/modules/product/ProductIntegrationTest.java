@@ -4,8 +4,10 @@ import com.datn.pc_store.modules.brand.entity.Brand;
 import com.datn.pc_store.modules.brand.repository.BrandRepository;
 import com.datn.pc_store.modules.category.entity.Category;
 import com.datn.pc_store.modules.category.repository.CategoryRepository;
+import com.datn.pc_store.modules.product.entity.BuildingPc;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.product.enums.*;
+import com.datn.pc_store.modules.product.repository.BuildingPcRepository;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ProductIntegrationTest {
     @Autowired private WebApplicationContext context;
     @Autowired private ProductRepository productRepository;
+    @Autowired private BuildingPcRepository buildingPcRepository;
     @Autowired private BrandRepository brandRepository;
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private EntityManager entityManager;
@@ -72,9 +75,10 @@ class ProductIntegrationTest {
                         """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.slug").value("card-man-hinh-asus"))
-                .andExpect(jsonPath("$.productType").value("COMPONENT"))
+                .andExpect(jsonPath("$.productType").value("OTHER"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
-                .andExpect(jsonPath("$.categoryIds").isEmpty());
+                .andExpect(jsonPath("$.categoryIds").isEmpty())
+                .andExpect(jsonPath("$.items").isEmpty());
         Product saved = productRepository.findBySlug("card-man-hinh-asus").orElseThrow();
         assertThat(jdbcTemplate.queryForObject("SELECT status FROM products WHERE id = ?", Integer.class, saved.getId())).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("SELECT product_type FROM products WHERE id = ?", Integer.class, saved.getId())).isZero();
@@ -86,27 +90,115 @@ class ProductIntegrationTest {
     void supportsBrandCategoriesPrimaryCategoryAndFilters() throws Exception {
         Brand brand = brandRepository.saveAndFlush(Brand.builder().name("ASUS").slug("asus").build());
         Category category = categoryRepository.saveAndFlush(Category.builder().name("Laptop").slug("laptop").build());
+        Product comp = saveProduct("CPU Intel", "CPU-01", ProductStatus.ACTIVE, ProductType.OTHER);
+
         String body = """
-                {"name":"ASUS Laptop","code":"LAPTOP-001","productType":"LAPTOP","brandId":%d,"categoryIds":[%d],"primaryCategoryId":%d}
-                """.formatted(brand.getId(), category.getId(), category.getId());
+                {"name":"ASUS Laptop","code":"LAPTOP-001","productType":"PC","brandId":%d,"categoryIds":[%d],"primaryCategoryId":%d,"items":[{"productId":%d,"quantity":1}]}
+                """.formatted(brand.getId(), category.getId(), category.getId(), comp.getId());
         mvc.perform(post("/api/admin/products").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.brandId").value(brand.getId().intValue()))
                 .andExpect(jsonPath("$.categoryIds[0]").value(category.getId().intValue()))
-                .andExpect(jsonPath("$.primaryCategoryId").value(category.getId().intValue()));
+                .andExpect(jsonPath("$.primaryCategoryId").value(category.getId().intValue()))
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].productId").value(comp.getId().intValue()))
+                .andExpect(jsonPath("$.items[0].productName").value("CPU Intel"));
+
         mvc.perform(get("/api/products").with(anonymous()).param("keyword", "ASUS")
                         .param("brandId", brand.getId().toString()).param("categoryId", category.getId().toString())
-                        .param("productType", "LAPTOP").param("status", "ACTIVE"))
+                        .param("productType", "PC").param("status", "ACTIVE"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
         mvc.perform(get("/api/admin/products").param("categoryId", "999999"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
     }
 
     @Test
+    void pcProductRequiresItemsAndValidatesBuildingPc() throws Exception {
+        Product comp = saveProduct("RAM Corsair", "RAM-001", ProductStatus.ACTIVE, ProductType.OTHER);
+
+        // PC thiếu items
+        mvc.perform(post("/api/admin/products").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"PC Gaming\",\"code\":\"PC-001\",\"productType\":\"PC\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(containsString("Sản phẩm loại PC phải có ít nhất một linh kiện cấu hình")));
+
+        // PC có items rỗng
+        mvc.perform(post("/api/admin/products").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"PC Gaming\",\"code\":\"PC-002\",\"productType\":\"PC\",\"items\":[]}"))
+                .andExpect(status().isBadRequest());
+
+        // OTHER có items
+        mvc.perform(post("/api/admin/products").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Chuột máy tính\",\"code\":\"MOUSE-001\",\"productType\":\"OTHER\",\"items\":[{\"productId\":" + comp.getId() + ",\"quantity\":1}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(containsString("Chỉ sản phẩm loại PC mới được cấu hình danh sách linh kiện")));
+
+        // PC có linh kiện không tồn tại
+        mvc.perform(post("/api/admin/products").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"PC Gaming\",\"code\":\"PC-003\",\"productType\":\"PC\",\"items\":[{\"productId\":999999,\"quantity\":1}]}"))
+                .andExpect(status().isNotFound());
+
+        // PC có linh kiện trùng lặp
+        mvc.perform(post("/api/admin/products").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"PC Gaming\",\"code\":\"PC-004\",\"productType\":\"PC\",\"items\":[{\"productId\":" + comp.getId() + ",\"quantity\":1},{\"productId\":" + comp.getId() + ",\"quantity\":2}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(containsString("bị trùng lặp")));
+    }
+
+    @Test
+    void pcProductUpdateReplacesItemsPreservesOmittedAndRejectsProductTypeChange() throws Exception {
+        Product comp1 = saveProduct("VGA RTX 4070", "VGA-4070", ProductStatus.ACTIVE, ProductType.OTHER);
+        Product comp2 = saveProduct("VGA RTX 4080", "VGA-4080", ProductStatus.ACTIVE, ProductType.OTHER);
+
+        // Tạo PC ban đầu với comp1
+        String createBody = """
+                {"name":"Gaming Rig","code":"RIG-001","productType":"PC","items":[{"productId":%d,"quantity":1}]}
+                """.formatted(comp1.getId());
+        String res = mvc.perform(post("/api/admin/products").contentType(MediaType.APPLICATION_JSON).content(createBody))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.productType").value("PC"))
+                .andExpect(jsonPath("$.items[0].productId").value(comp1.getId().intValue()))
+                .andReturn().getResponse().getContentAsString();
+
+        Long pcId = ((Number) com.jayway.jsonpath.JsonPath.read(res, "$.id")).longValue();
+
+        // Cập nhật PC: thử truyền productType = OTHER -> Hệ thống không cho đổi, vẫn giữ PC
+        String updateBody1 = """
+                {"name":"Updated Gaming Rig","code":"RIG-001","productType":"OTHER"}
+                """;
+        mvc.perform(put("/api/admin/products/" + pcId).contentType(MediaType.APPLICATION_JSON).content(updateBody1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productType").value("PC"))
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].productId").value(comp1.getId().intValue()));
+
+        // Cập nhật PC: thay thế linh kiện sang comp2
+        String updateBody2 = """
+                {"name":"Updated Gaming Rig","code":"RIG-001","items":[{"productId":%d,"quantity":2}]}
+                """.formatted(comp2.getId());
+        mvc.perform(put("/api/admin/products/" + pcId).contentType(MediaType.APPLICATION_JSON).content(updateBody2))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].productId").value(comp2.getId().intValue()))
+                .andExpect(jsonPath("$.items[0].quantity").value(2));
+
+        assertThat(buildingPcRepository.findByPcId(pcId)).hasSize(1);
+        assertThat(buildingPcRepository.findByPcId(pcId).get(0).getProductId()).isEqualTo(comp2.getId());
+        assertThat(buildingPcRepository.findByPcId(pcId).get(0).getQuantity()).isEqualTo(2);
+
+        // Không cho phép cấu hình linh kiện cho sản phẩm OTHER
+        Product otherProd = saveProduct("Bàn phím cơ", "KB-001", ProductStatus.ACTIVE, ProductType.OTHER);
+        mvc.perform(put("/api/admin/products/" + otherProd.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Bàn phím cơ\",\"code\":\"KB-001\",\"items\":[{\"productId\":" + comp1.getId() + ",\"quantity\":1}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(containsString("Chỉ sản phẩm loại PC mới được cấu hình danh sách linh kiện")));
+    }
+
+    @Test
     void updateReplacesCategoriesWithoutDuplicateLinksAndPreservesOmittedEnums() throws Exception {
         Category first = categoryRepository.saveAndFlush(Category.builder().name("First").slug("first").build());
         Category second = categoryRepository.saveAndFlush(Category.builder().name("Second").slug("second").build());
-        Product product = saveProduct("Laptop", "LAPTOP", ProductStatus.OUT_OF_STOCK, ProductType.LAPTOP);
+        Product product = saveProduct("Laptop", "LAPTOP", ProductStatus.OUT_OF_STOCK, ProductType.PC);
         String body = """
                 {"name":"Updated Laptop","code":"LAPTOP","categoryIds":[%d,%d],"primaryCategoryId":%d}
                 """.formatted(first.getId(), second.getId(), first.getId());
@@ -114,7 +206,7 @@ class ProductIntegrationTest {
             mvc.perform(put("/api/admin/products/" + product.getId()).contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.categoryIds", hasSize(2)))
                     .andExpect(jsonPath("$.status").value("OUT_OF_STOCK"))
-                    .andExpect(jsonPath("$.productType").value("LAPTOP"));
+                    .andExpect(jsonPath("$.productType").value("PC"));
         }
         mvc.perform(put("/api/admin/products/" + product.getId()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Updated Laptop\",\"code\":\"LAPTOP\"}"))
@@ -145,7 +237,7 @@ class ProductIntegrationTest {
 
     @Test
     void softDeleteHidesProductAndReservesCodeAndSlug() throws Exception {
-        Product product = saveProduct("Deleted", "DELETED", ProductStatus.ACTIVE, ProductType.COMPONENT);
+        Product product = saveProduct("Deleted", "DELETED", ProductStatus.ACTIVE, ProductType.OTHER);
         mvc.perform(delete("/api/admin/products/" + product.getId())).andExpect(status().isNoContent());
         entityManager.flush();
         entityManager.clear();
@@ -180,8 +272,8 @@ class ProductIntegrationTest {
 
     @Test
     void duplicateUpdatesDoNotChangeExistingProduct() throws Exception {
-        saveProduct("First", "FIRST", ProductStatus.ACTIVE, ProductType.COMPONENT);
-        Product second = saveProduct("Second", "SECOND", ProductStatus.ACTIVE, ProductType.COMPONENT);
+        saveProduct("First", "FIRST", ProductStatus.ACTIVE, ProductType.OTHER);
+        Product second = saveProduct("Second", "SECOND", ProductStatus.ACTIVE, ProductType.OTHER);
         for (String body : new String[]{"{\"name\":\"Second\",\"code\":\"FIRST\"}", "{\"name\":\"First\",\"code\":\"SECOND\"}"}) {
             mvc.perform(put("/api/admin/products/" + second.getId()).contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isConflict());
@@ -191,8 +283,8 @@ class ProductIntegrationTest {
 
     @Test
     void validatesSortAndSupportsMultipleSortsAndPagination() throws Exception {
-        saveProduct("Alpha", "A", ProductStatus.ACTIVE, ProductType.COMPONENT);
-        saveProduct("Zulu", "Z", ProductStatus.ACTIVE, ProductType.COMPONENT);
+        saveProduct("Alpha", "A", ProductStatus.ACTIVE, ProductType.OTHER);
+        saveProduct("Zulu", "Z", ProductStatus.ACTIVE, ProductType.OTHER);
         for (String path : new String[]{"/api/products", "/api/admin/products"}) {
             for (String sort : new String[]{"[\"string\"]", "[]", "unknown,desc"}) {
                 mvc.perform(get(path).param("sort", sort)).andExpect(status().isBadRequest());

@@ -39,7 +39,7 @@ public class Product extends BaseEntity {
 
     @Column(name = "product_type", nullable = false)
     @Builder.Default
-    private ProductType productType = ProductType.COMPONENT;
+    private ProductType productType = ProductType.OTHER;
 
     @Column(nullable = false)
     @Builder.Default
@@ -48,7 +48,7 @@ public class Product extends BaseEntity {
     @Column(unique = true, length = 255)
     private String slug;
 
-    @Column(name = "image_url", length = 500)
+    @Column(name = "image_url", columnDefinition = "LONGTEXT")
     private String imageUrl;
 
     @Column(name = "brand_id")

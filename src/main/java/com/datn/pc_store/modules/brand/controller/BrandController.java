@@ -35,7 +35,7 @@ public class BrandController {
     public ResponseEntity<PageResponse<BrandResponse>> getAllBrands(
             @Parameter(description = "Từ khóa tìm kiếm (tên, slug, mô tả)")
             @RequestParam(required = false) String keyword,
-            @Parameter(description = "Lọc theo trạng thái (ACTIVE: 1, INACTIVE: 0)")
+            @Parameter(description = "Lọc theo trạng thái (ACTIVE, INACTIVE)")
             @RequestParam(required = false) BrandStatus status,
             @PageableDefault(size = 10, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable
     ) {
@@ -85,7 +85,7 @@ public class BrandController {
 
     @PatchMapping("/{id}/status")
     @Operation(summary = "Chuyển trạng thái thương hiệu",
-               description = "Cập nhật trạng thái hoạt động (ACTIVE: 1 hoặc INACTIVE: 0) của thương hiệu.")
+               description = "Cập nhật trạng thái hoạt động (ACTIVE hoặc INACTIVE) của thương hiệu.")
     public ResponseEntity<BrandResponse> updateStatus(
             @Parameter(description = "ID thương hiệu")
             @PathVariable Long id,

@@ -1,10 +1,5 @@
-<<<<<<<< HEAD:src/main/resources/db/migration/V2__create_catalog_tables.sql
--- V2__create_catalog_tables.sql
--- Phân hệ Catalog & Products: categories, brands, products, category_products, building_pc, product_price, product_reviews, product_favorites
-========
 -- V5__create_catalog_tables.sql
 -- Module Catalog: categories, brands, products, category_products, building_pc, product_price
->>>>>>>> main:src/main/resources/db/migration/V5__create_catalog_tables.sql
 
 CREATE TABLE categories (
     id                  BIGINT        NOT NULL AUTO_INCREMENT,
@@ -61,7 +56,6 @@ CREATE TABLE products (
     last_modified_date  DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     PRIMARY KEY (id),
     CONSTRAINT uk_products_code UNIQUE (code),
-    CONSTRAINT uk_products_slug UNIQUE (slug),
     CONSTRAINT fk_products_brand FOREIGN KEY (brand_id) REFERENCES brands (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -111,35 +105,3 @@ CREATE TABLE product_price (
 
 CREATE INDEX idx_pp_product ON product_price (product_id);
 CREATE INDEX idx_pp_is_present ON product_price (is_present_price);
-
-CREATE TABLE product_reviews (
-    id           BIGINT        NOT NULL AUTO_INCREMENT,
-    product_id   BIGINT        NOT NULL,
-    customer_id  BIGINT        NOT NULL,
-    rating       TINYINT       NOT NULL,
-    title        VARCHAR(100)  NULL,
-    content      TEXT          NULL,
-    status       TINYINT       NOT NULL DEFAULT 1 COMMENT '0: hidden, 1: visible',
-    created_at   DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at   DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (id),
-    CONSTRAINT fk_pr_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE,
-    CONSTRAINT fk_pr_customer FOREIGN KEY (customer_id) REFERENCES users (id) ON DELETE CASCADE,
-    CONSTRAINT chk_review_rating CHECK (rating BETWEEN 1 AND 5)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE INDEX idx_pr_product_user ON product_reviews (product_id, customer_id);
-CREATE INDEX idx_pr_status ON product_reviews (status);
-
-CREATE TABLE product_favorites (
-    id           BIGINT       NOT NULL AUTO_INCREMENT,
-    customer_id  BIGINT       NOT NULL,
-    product_id   BIGINT       NOT NULL,
-    created_at   DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (id),
-    CONSTRAINT uk_pf_customer_product UNIQUE (customer_id, product_id),
-    CONSTRAINT fk_pf_customer FOREIGN KEY (customer_id) REFERENCES users (id) ON DELETE CASCADE,
-    CONSTRAINT fk_pf_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE INDEX idx_pf_product ON product_favorites (product_id);
