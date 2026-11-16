@@ -42,7 +42,7 @@ public interface PurchaseReturnRepository extends JpaRepository<PurchaseReturn, 
              OR (:filterMode = 1 AND pr.createdBy = :currentUserId)
              OR (:filterMode = 2 AND (
                     pr.status IN :managerStatuses
-                 OR ((pr.status = :draftStatus OR pr.status = :cancelledStatus) AND pr.createdBy = :currentUserId)
+                 OR ((pr.status = :returnedStatus OR pr.status = :cancelledStatus) AND pr.createdBy = :currentUserId)
              ))
           )
           AND (:fromDate IS NULL OR COALESCE(pr.returnDate, pr.createdDate) >= :fromDate)
@@ -55,7 +55,7 @@ public interface PurchaseReturnRepository extends JpaRepository<PurchaseReturn, 
             @Param("filterMode") int filterMode,
             @Param("currentUserId") Long currentUserId,
             @Param("managerStatuses") Collection<PurchaseReturnStatus> managerStatuses,
-            @Param("draftStatus") PurchaseReturnStatus draftStatus,
+            @Param("returnedStatus") PurchaseReturnStatus returnedStatus,
             @Param("cancelledStatus") PurchaseReturnStatus cancelledStatus,
             @Param("fromDate") Instant fromDate,
             @Param("toDate") Instant toDate,

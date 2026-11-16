@@ -27,10 +27,10 @@ public class OrderDeliveryHandler implements DeliveryResourceHandler {
     @Override
     public void startDelivery(Long resourceId) {
         Order order = lockOrder(resourceId);
-        if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.PROCESSING) {
-            throw new BadRequestException("Chỉ có thể lập vận đơn cho đơn hàng CONFIRMED hoặc PROCESSING.");
+        if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.DELIVERING) {
+            throw new BadRequestException("Chỉ có thể lập vận đơn cho đơn hàng CONFIRMED hoặc DELIVERING.");
         }
-        order.setStatus(OrderStatus.PROCESSING);
+        order.setStatus(OrderStatus.DELIVERING);
         orderSerialService.markDelivering(resourceId);
     }
 
@@ -42,15 +42,15 @@ public class OrderDeliveryHandler implements DeliveryResourceHandler {
     @Override
     public void onTerminalStatus(Long resourceId, DeliveryStatus status) {
         Order order = lockOrder(resourceId);
-        if (order.getStatus() != OrderStatus.PROCESSING) {
-            throw new BadRequestException("Đơn hàng phải ở trạng thái PROCESSING để kết thúc giao hàng.");
+        if (order.getStatus() != OrderStatus.DELIVERING) {
+            throw new BadRequestException("Đơn hàng phải ở trạng thái DELIVERING để kết thúc giao hàng.");
         }
         if (status == DeliveryStatus.DELIVERED) {
             order.setStatus(OrderStatus.COMPLETED);
             orderSerialService.markSold(resourceId);
             warrantyActivationService.activateForCompletedOrder(order);
         } else {
-            order.setStatus(OrderStatus.CANCELLED);
+            order.setStatus(OrderStatus.RETURNED);
             orderSerialService.release(resourceId);
         }
     }

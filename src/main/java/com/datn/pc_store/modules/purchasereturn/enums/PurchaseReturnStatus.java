@@ -5,13 +5,13 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 
 @Getter
-@Schema(description = "Trạng thái phiếu hoàn hàng NCC: PENDING (0 - Chờ xử lý/Chờ xuất), DELIVERING (1 - Đang giao trả), RETURNED (2 - Đã hoàn trả), CANCELLED (3 - Đã hủy), DRAFT (4 - Nháp)")
+@Schema(description = "Trạng thái phiếu hoàn hàng NCC: PENDING (0 - Chờ xử lý/Chờ xuất), DELIVERING (1 - Đang giao trả), COMPLETED (2 - Hoàn tất / NCC đã nhận hàng), CANCELLED (3 - Đã hủy), RETURNED (4 - Đã trả hàng về kho)")
 public enum PurchaseReturnStatus {
     PENDING(0),
     DELIVERING(1),
-    RETURNED(2),
+    COMPLETED(2),
     CANCELLED(3),
-    DRAFT(4);
+    RETURNED(4);
 
     private final int value;
 
