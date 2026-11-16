@@ -262,7 +262,7 @@ public class OrderService {
 
         if (newStatus == OrderStatus.COMPLETED
                 && (currentStatus == OrderStatus.PENDING || currentStatus == OrderStatus.CONFIRMED
-                    || currentStatus == OrderStatus.PROCESSING)) {
+                    || currentStatus == OrderStatus.DELIVERING)) {
             if (deliveryService.existsForResource(DeliveryResourceType.ORDER, id)) {
                 throw new BadRequestException("Đơn đã có vận đơn; hãy cập nhật vận đơn sang DELIVERED để hoàn tất.");
             }
@@ -272,9 +272,9 @@ public class OrderService {
             return mapOrderWithSerials(orderRepository.save(order));
         }
 
-        if (currentStatus == OrderStatus.PROCESSING
+        if (currentStatus == OrderStatus.DELIVERING
                 && (newStatus == OrderStatus.COMPLETED || newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.RETURNED)) {
-            throw new BadRequestException("Đơn đã bắt đầu giao; hãy cập nhật trạng thái vận đơn để hoàn tất hoặc hủy giao.");
+            throw new BadRequestException("Đơn đang giao hàng; hãy cập nhật trạng thái vận đơn để hoàn tất hoặc hủy giao.");
         }
 
         // Kiểm tra logic luồng chuyển đổi trạng thái hợp lệ
@@ -468,7 +468,7 @@ public class OrderService {
             }
         }
         if (from == OrderStatus.CONFIRMED) {
-            if (to == OrderStatus.PROCESSING || to == OrderStatus.CANCELLED) {
+            if (to == OrderStatus.DELIVERING || to == OrderStatus.CANCELLED) {
                 return;
             }
         }

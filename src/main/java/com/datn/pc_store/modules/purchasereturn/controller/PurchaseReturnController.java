@@ -34,7 +34,7 @@ public class PurchaseReturnController {
             description = "Tra cứu phiếu hoàn trả theo từ khóa (mã hoặc tên phiếu), lọc theo trạng thái, nhà cung cấp và khoảng ngày. Sắp xếp mặc định theo createdDate desc.")
     public ResponseEntity<PageResponse<PurchaseReturnResponse>> getAllReturns(
             @Parameter(description = "Từ khóa tìm theo mã hoặc tên phiếu") @RequestParam(required = false) String keyword,
-            @Parameter(description = "Lọc theo trạng thái: PENDING (0), DELIVERING (1), RETURNED (2), CANCELLED (3), DRAFT (4)") @RequestParam(required = false) PurchaseReturnStatus status,
+            @Parameter(description = "Lọc theo trạng thái: PENDING (0), DELIVERING (1), COMPLETED (2), CANCELLED (3), RETURNED (4)") @RequestParam(required = false) PurchaseReturnStatus status,
             @Parameter(description = "Lọc theo ID nhà cung cấp") @RequestParam(required = false) Long supplierId,
             @Parameter(description = "Từ thời điểm, ISO 8601", example = "2026-10-01T00:00:00Z")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant fromDate,
@@ -65,7 +65,7 @@ public class PurchaseReturnController {
 
     @PostMapping
     @Operation(summary = "Tạo mới phiếu hoàn trả hàng NCC",
-            description = "Tạo phiếu ở trạng thái PENDING hoặc DRAFT kèm danh sách serial. Tự động kiểm tra serial có thuộc về NCC đó không và tính tổng tiền hoàn trả.")
+            description = "Tạo phiếu ở trạng thái PENDING kèm danh sách serial. Tự động kiểm tra serial có thuộc về NCC đó không và tính tổng tiền hoàn trả.")
     public ResponseEntity<PurchaseReturnResponse> createReturn(
             @Valid @RequestBody PurchaseReturnCreateRequest req
     ) {
@@ -73,8 +73,8 @@ public class PurchaseReturnController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Cập nhật phiếu hoàn trả nháp",
-            description = "Chỉ cho phép cập nhật khi phiếu đang ở trạng thái DRAFT.")
+    @Operation(summary = "Cập nhật phiếu hoàn trả",
+            description = "Chỉ cho phép cập nhật khi phiếu đang ở trạng thái PENDING.")
     public ResponseEntity<PurchaseReturnResponse> updateReturn(
             @Parameter(description = "ID phiếu hoàn trả") @PathVariable Long id,
             @Valid @RequestBody PurchaseReturnUpdateRequest req
@@ -93,8 +93,8 @@ public class PurchaseReturnController {
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Xóa phiếu hoàn trả nháp",
-            description = "Chỉ cho phép xóa khi phiếu ở trạng thái DRAFT.")
+    @Operation(summary = "Xóa phiếu hoàn trả",
+            description = "Chỉ cho phép xóa khi phiếu ở trạng thái PENDING.")
     public ResponseEntity<Void> deleteReturn(
             @Parameter(description = "ID phiếu hoàn trả") @PathVariable Long id
     ) {

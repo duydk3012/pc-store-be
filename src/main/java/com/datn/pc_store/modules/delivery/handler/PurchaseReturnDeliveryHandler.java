@@ -45,7 +45,7 @@ public class PurchaseReturnDeliveryHandler implements DeliveryResourceHandler {
         }
 
         boolean delivered = status == DeliveryStatus.DELIVERED;
-        purchaseReturn.setStatus(delivered ? PurchaseReturnStatus.RETURNED : PurchaseReturnStatus.CANCELLED);
+        purchaseReturn.setStatus(delivered ? PurchaseReturnStatus.COMPLETED : PurchaseReturnStatus.RETURNED);
         for (PurchaseReturnItem item : purchaseReturn.getItems()) {
             if (item.getProductSerial() != null) {
                 item.getProductSerial().setStatus(delivered

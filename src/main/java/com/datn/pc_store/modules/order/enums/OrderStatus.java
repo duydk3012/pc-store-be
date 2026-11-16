@@ -5,12 +5,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 
 @Getter
-@Schema(description = "Trạng thái đơn hàng: PENDING (0 - Chờ xác nhận), CONFIRMED (1 - Đã xác nhận), REJECTED (2 - Từ chối), PROCESSING (3 - Đang xử lý / đóng gói), COMPLETED (4 - Hoàn tất giao dịch), CANCELLED (5 - Đã hủy), RETURNED (6 - Trả hàng / hoàn tiền)")
+@Schema(description = "Trạng thái đơn hàng: PENDING (0 - Chờ xác nhận), CONFIRMED (1 - Đã xác nhận), REJECTED (2 - Từ chối), DELIVERING (3 - Đang giao hàng), COMPLETED (4 - Hoàn tất giao dịch), CANCELLED (5 - Đã hủy), RETURNED (6 - Đã trả hàng về kho)")
 public enum OrderStatus {
     PENDING(0),
     CONFIRMED(1),
     REJECTED(2),
-    PROCESSING(3),
+    DELIVERING(3),
     COMPLETED(4),
     CANCELLED(5),
     RETURNED(6);

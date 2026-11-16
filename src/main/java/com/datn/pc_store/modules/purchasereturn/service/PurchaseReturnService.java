@@ -5,6 +5,8 @@ import com.datn.pc_store.common.exception.BadRequestException;
 import com.datn.pc_store.common.exception.DuplicateResourceException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
 import com.datn.pc_store.modules.auth.security.CustomUserDetails;
+import com.datn.pc_store.modules.delivery.enums.DeliveryResourceType;
+import com.datn.pc_store.modules.delivery.service.DeliveryService;
 import com.datn.pc_store.modules.goodsreceipt.entity.GoodsReceipt;
 import com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial;
 import com.datn.pc_store.modules.goodsreceipt.entity.ReceiptItem;
@@ -63,6 +65,7 @@ public class PurchaseReturnService {
     private final ProductRepository productRepository;
     private final PurchaseReturnMapper purchaseReturnMapper;
     private final EntityManager entityManager;
+    private final DeliveryService deliveryService;
 
     @Transactional(readOnly = true)
     public PageResponse<PurchaseReturnResponse> getAllReturns(
@@ -90,15 +93,15 @@ public class PurchaseReturnService {
         Collection<PurchaseReturnStatus> managerStatuses = List.of(
                 PurchaseReturnStatus.PENDING,
                 PurchaseReturnStatus.DELIVERING,
-                PurchaseReturnStatus.RETURNED
+                PurchaseReturnStatus.COMPLETED
         );
-        PurchaseReturnStatus draftStatus = PurchaseReturnStatus.DRAFT;
+        PurchaseReturnStatus returnedStatus = PurchaseReturnStatus.RETURNED;
         PurchaseReturnStatus cancelledStatus = PurchaseReturnStatus.CANCELLED;
 
         if (isAdmin) {
             filterMode = 0;
         } else if (isManager) {
-            if (currentUserId == null && (status == PurchaseReturnStatus.CANCELLED || status == PurchaseReturnStatus.DRAFT)) {
+            if (currentUserId == null && (status == PurchaseReturnStatus.CANCELLED || status == PurchaseReturnStatus.RETURNED)) {
                 return PageResponse.of(Page.<PurchaseReturn>empty(pageable).map(purchaseReturnMapper::toResponse));
             }
             filterMode = 2;
@@ -111,7 +114,7 @@ public class PurchaseReturnService {
 
         Page<PurchaseReturn> page = purchaseReturnRepository.searchReturns(
                 keyword, status, supplierId, filterMode, currentUserId,
-                managerStatuses, draftStatus, cancelledStatus, fromDate, toDate, pageable
+                managerStatuses, returnedStatus, cancelledStatus, fromDate, toDate, pageable
         );
 
         return PageResponse.of(page.map(this::toEnrichedResponse));
@@ -141,8 +144,8 @@ public class PurchaseReturnService {
         Supplier supplier = validateAndGetSupplier(req.getSupplierId());
 
         PurchaseReturnStatus targetStatus = req.getStatus() == null ? PurchaseReturnStatus.PENDING : req.getStatus();
-        if (targetStatus != PurchaseReturnStatus.PENDING && targetStatus != PurchaseReturnStatus.DRAFT) {
-            throw new BadRequestException("Khi khởi tạo phiếu hoàn trả, trạng thái chỉ có thể là PENDING hoặc DRAFT.");
+        if (targetStatus != PurchaseReturnStatus.PENDING) {
+            throw new BadRequestException("Khi khởi tạo phiếu hoàn trả, trạng thái chỉ có thể là PENDING.");
         }
 
         Long currentUserId = getCurrentUserId();
@@ -168,8 +171,8 @@ public class PurchaseReturnService {
                 null
         );
 
-        if (targetStatus == PurchaseReturnStatus.PENDING && serials.isEmpty()) {
-            throw new BadRequestException("Phiếu hoàn trả ở trạng thái PENDING phải có ít nhất một serial sản phẩm.");
+        if (serials.isEmpty()) {
+            throw new BadRequestException("Phiếu hoàn trả phải có ít nhất một serial sản phẩm.");
         }
 
         List<PurchaseReturnItem> items = new ArrayList<>();
@@ -191,8 +194,7 @@ public class PurchaseReturnService {
 
             if (targetStatus == PurchaseReturnStatus.PENDING) {
                 serial.setStatus(ProductSerialStatus.PENDING_RETURN);
-            }
-        }
+            }        }
 
         pr.setTotalAmount(totalAmount);
         pr.setItems(items);
@@ -208,10 +210,6 @@ public class PurchaseReturnService {
         requireEditable(pr);
 
         Long currentUserId = getCurrentUserId();
-        if (pr.getCreatedBy() != null && currentUserId != null
-                && !currentUserId.equals(pr.getCreatedBy()) && !hasRole("ADMIN")) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo mới có thể chỉnh sửa phiếu hoàn trả nháp.");
-        }
 
         String code = req.getCode() != null ? req.getCode().trim() : "";
         validateCode(code, id);
@@ -253,7 +251,7 @@ public class PurchaseReturnService {
         pr.getItems().addAll(items);
 
         PurchaseReturn saved = purchaseReturnRepository.saveAndFlush(pr);
-        log.info("Đã cập nhật phiếu hoàn trả nháp id: {}", id);
+        log.info("Đã cập nhật phiếu hoàn trả id: {}", id);
         return toEnrichedResponse(saved);
     }
 
@@ -276,19 +274,23 @@ public class PurchaseReturnService {
         if (current == PurchaseReturnStatus.CANCELLED) {
             throw conflict("Phiếu hoàn trả đã bị hủy, không thể thay đổi trạng thái.");
         }
+        if (current == PurchaseReturnStatus.COMPLETED) {
+            throw conflict("Phiếu hoàn trả đã hoàn tất (COMPLETED), không thể thay đổi trạng thái.");
+        }
         if (current == PurchaseReturnStatus.RETURNED) {
-            throw conflict("Phiếu hoàn trả đã hoàn tất (RETURNED), không thể thay đổi trạng thái.");
+            throw conflict("Phiếu hoàn trả đã trả về kho (RETURNED), không thể thay đổi trạng thái.");
         }
         if (current == PurchaseReturnStatus.DELIVERING
-                && (target == PurchaseReturnStatus.RETURNED || target == PurchaseReturnStatus.CANCELLED)) {
-            throw conflict("Phiếu đang giao; hãy cập nhật trạng thái vận đơn để ghi nhận kết quả giao hàng.");
+                && (target == PurchaseReturnStatus.COMPLETED || target == PurchaseReturnStatus.CANCELLED || target == PurchaseReturnStatus.RETURNED)) {
+            if (deliveryService.existsForResource(DeliveryResourceType.PURCHASE_RETURN, id)) {
+                throw conflict("Phiếu đang giao; hãy cập nhật trạng thái vận đơn để ghi nhận kết quả giao hàng.");
+            }
         }
 
         boolean allowed = switch (current) {
-            case DRAFT -> target == PurchaseReturnStatus.PENDING || target == PurchaseReturnStatus.CANCELLED;
             case PENDING -> target == PurchaseReturnStatus.DELIVERING || target == PurchaseReturnStatus.CANCELLED;
-            case DELIVERING -> target == PurchaseReturnStatus.RETURNED || target == PurchaseReturnStatus.CANCELLED;
-            case RETURNED, CANCELLED -> false;
+            case DELIVERING -> target == PurchaseReturnStatus.COMPLETED || target == PurchaseReturnStatus.CANCELLED || target == PurchaseReturnStatus.RETURNED;
+            case COMPLETED, CANCELLED, RETURNED -> false;
         };
 
         if (!allowed) {
@@ -297,9 +299,6 @@ public class PurchaseReturnService {
 
         switch (target) {
             case PENDING -> {
-                if (createdBy != null && currentUserId != null && !currentUserId.equals(createdBy) && !isAdmin) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo hoặc Quản trị viên mới có quyền gửi duyệt phiếu hoàn trả.");
-                }
                 if (pr.getItems().isEmpty()) {
                     throw new BadRequestException("Phiếu hoàn trả phải có ít nhất một serial sản phẩm khi chuyển sang PENDING.");
                 }
@@ -316,7 +315,7 @@ public class PurchaseReturnService {
                 }
                 pr.startDelivery();
             }
-            case RETURNED -> {
+            case COMPLETED -> {
                 if (!isAdmin && !isManager) {
                     throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản lý (MANAGER) hoặc Quản trị viên (ADMIN) mới có quyền xác nhận NCC đã nhận hàng hoàn.");
                 }
@@ -329,10 +328,15 @@ public class PurchaseReturnService {
                 }
             }
             case CANCELLED -> {
-                if (current == PurchaseReturnStatus.DRAFT && createdBy != null && currentUserId != null
-                        && !currentUserId.equals(createdBy) && !isAdmin) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo mới có quyền hủy phiếu hoàn trả nháp.");
+                for (PurchaseReturnItem item : pr.getItems()) {
+                    ProductSerial ps = item.getProductSerial();
+                    if (ps != null) {
+                        ps.setStatus(ProductSerialStatus.DEFECTIVE);
+                        ps.setTerminated(false);
+                    }
                 }
+            }
+            case RETURNED -> {
                 for (PurchaseReturnItem item : pr.getItems()) {
                     ProductSerial ps = item.getProductSerial();
                     if (ps != null) {
@@ -357,16 +361,16 @@ public class PurchaseReturnService {
     @Transactional
     public void deleteReturn(Long id) {
         PurchaseReturn pr = lockReturn(id);
-        if (pr.getStatus() != PurchaseReturnStatus.DRAFT) {
-            throw conflict("Chỉ có thể xóa phiếu hoàn trả khi ở trạng thái nháp (DRAFT).");
+        if (pr.getStatus() != PurchaseReturnStatus.PENDING) {
+            throw conflict("Chỉ có thể xóa phiếu hoàn trả khi ở trạng thái chờ xử lý (PENDING).");
         }
         Long currentUserId = getCurrentUserId();
         if (pr.getCreatedBy() != null && currentUserId != null
                 && !currentUserId.equals(pr.getCreatedBy()) && !hasRole("ADMIN")) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo hoặc Quản trị viên mới có quyền xóa phiếu nháp.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo hoặc Quản trị viên mới có quyền xóa phiếu hoàn trả.");
         }
         purchaseReturnRepository.delete(pr);
-        log.info("Đã xóa phiếu hoàn trả nháp id: {}", id);
+        log.info("Đã xóa phiếu hoàn trả id: {}", id);
     }
 
     @Transactional(readOnly = true)
@@ -627,8 +631,8 @@ public class PurchaseReturnService {
     }
 
     private void requireEditable(PurchaseReturn pr) {
-        if (pr.getStatus() != PurchaseReturnStatus.DRAFT) {
-            throw conflict("Chỉ có thể chỉnh sửa phiếu hoàn trả ở trạng thái nháp (DRAFT). Trạng thái hiện tại: " + pr.getStatus());
+        if (pr.getStatus() != PurchaseReturnStatus.PENDING) {
+            throw conflict("Chỉ có thể chỉnh sửa phiếu hoàn trả ở trạng thái chờ xử lý (PENDING). Trạng thái hiện tại: " + pr.getStatus());
         }
     }
 
@@ -648,9 +652,9 @@ public class PurchaseReturnService {
         }
 
         if (isManager) {
-            if (pr.getStatus() == PurchaseReturnStatus.DRAFT || pr.getStatus() == PurchaseReturnStatus.CANCELLED) {
+            if (pr.getStatus() == PurchaseReturnStatus.RETURNED || pr.getStatus() == PurchaseReturnStatus.CANCELLED) {
                 if (pr.getCreatedBy() == null || currentUserId == null || !currentUserId.equals(pr.getCreatedBy())) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Quản lý chỉ xem được phiếu nháp hoặc phiếu đã hủy do chính mình tạo.");
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Quản lý chỉ xem được phiếu đã trả về kho hoặc phiếu đã hủy do chính mình tạo.");
                 }
             }
         }

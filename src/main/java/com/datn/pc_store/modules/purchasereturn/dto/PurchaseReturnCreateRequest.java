@@ -42,7 +42,7 @@ public class PurchaseReturnCreateRequest {
     @Schema(description = "Thời gian xuất trả hàng, ISO 8601")
     private Instant returnDate;
 
-    @Schema(description = "Trạng thái khởi tạo: PENDING (0) hoặc DRAFT (4). Mặc định là PENDING nếu không truyền.", example = "PENDING")
+    @Schema(description = "Trạng thái khởi tạo: PENDING (0). Mặc định là PENDING nếu không truyền.", example = "PENDING")
     private PurchaseReturnStatus status;
 
     @Schema(description = "Danh sách chuỗi mã serial quét từ máy quét barcode (hoặc chọn thủ công)")

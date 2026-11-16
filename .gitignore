@@ -1,6 +1,7 @@
 .env
 document/
 docs/
+diagram/
 readme/
 *.xlsx
 

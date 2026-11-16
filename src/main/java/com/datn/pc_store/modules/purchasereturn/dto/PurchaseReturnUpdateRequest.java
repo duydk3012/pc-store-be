@@ -13,7 +13,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Schema(description = "Yêu cầu cập nhật phiếu hoàn trả nháp")
+@Schema(description = "Yêu cầu cập nhật phiếu hoàn trả ở trạng thái PENDING")
 public class PurchaseReturnUpdateRequest {
 
     @NotBlank(message = "Mã phiếu hoàn trả không được để trống")
