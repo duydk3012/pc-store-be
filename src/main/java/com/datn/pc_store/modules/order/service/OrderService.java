@@ -252,7 +252,7 @@ public class OrderService {
                     throw new BadRequestException("Đơn hàng ở trạng thái '" + currentStatus + "' không thể tự hủy.");
                 }
             } else if (newStatus == OrderStatus.COMPLETED) {
-                if (currentStatus != OrderStatus.PROCESSING) {
+                if (currentStatus != OrderStatus.DELIVERING) {
                     throw new BadRequestException("Chỉ có thể xác nhận nhận hàng khi đơn đang trong quá trình xử lý/vận chuyển.");
                 }
             } else {
@@ -356,9 +356,9 @@ public class OrderService {
             productSerialRepository.saveAll(serials);
         }
 
-        // Cập nhật trạng thái đơn hàng sang PROCESSING (Đang đóng gói/xử lý) nếu đang ở CONFIRMED
+        // Cập nhật trạng thái đơn hàng sang DELIVERING (Đang đóng gói/xử lý) nếu đang ở CONFIRMED
         if (order.getStatus() == OrderStatus.CONFIRMED || order.getStatus() == OrderStatus.PENDING) {
-            order.setStatus(OrderStatus.PROCESSING);
+            order.setStatus(OrderStatus.DELIVERING);
             orderRepository.save(order);
         }
 
@@ -472,7 +472,7 @@ public class OrderService {
                 return;
             }
         }
-        if (from == OrderStatus.PROCESSING) {
+        if (from == OrderStatus.DELIVERING) {
             if (to == OrderStatus.COMPLETED || to == OrderStatus.CANCELLED || to == OrderStatus.RETURNED) {
                 return;
             }
