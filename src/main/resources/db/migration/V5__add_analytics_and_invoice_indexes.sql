@@ -13,7 +13,7 @@ CREATE INDEX idx_orders_status_create_date ON orders (status, created_date);
 CREATE INDEX idx_ps_status_terminated ON product_serials (status, is_terminated);
 
 -- 4. Index cho bang receipt_items
-CREATE INDEX idx_ri_receipt_product ON receipt_items (goods_receipt_id, product_id);
+CREATE INDEX idx_ri_receipt_poi ON receipt_items (goods_receipt_id, purchase_order_item_id);
 
 -- 5. Backfill Hoa don cho cac don hang COMPLETED trong qua khu chua co hoa don
 INSERT INTO invoices (code, order_id, invoice_date, total_amount, discount_amount, tax_amount, amount, status, created_date, last_modified_date)
