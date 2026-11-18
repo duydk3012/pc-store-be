@@ -24,9 +24,21 @@ public class OrderSerialService {
     private final com.datn.pc_store.modules.order.repository.OrderItemRepository orderItems;
 
     public void reserve(Order order, List<OrderItemRequest> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        boolean hasAnySerial = items.stream()
+                .anyMatch(it -> it.getSerialNumbers() != null && !it.getSerialNumbers().isEmpty());
+        if (!hasAnySerial) {
+            return;
+        }
+
         Set<String> numbers = new HashSet<>();
         for (var item : items) {
-            if (item.getSerialNumbers() == null || item.getSerialNumbers().size() != item.getQuantity()) {
+            if (item.getSerialNumbers() == null || item.getSerialNumbers().isEmpty()) {
+                continue;
+            }
+            if (item.getSerialNumbers().size() != item.getQuantity()) {
                 throw new BadRequestException("Phải nhập đủ một serial cho mỗi sản phẩm đặt mua.");
             }
             for (String number : item.getSerialNumbers()) {
@@ -35,6 +47,10 @@ public class OrderSerialService {
                 }
             }
         }
+        if (numbers.isEmpty()) {
+            return;
+        }
+
         Map<String, ProductSerial> byNumber = new HashMap<>();
         for (var serial : inventory.lockActiveBySerialNumbers(numbers)) {
             if (byNumber.put(serial.getSerialNumber(), serial) != null) {
@@ -42,8 +58,12 @@ public class OrderSerialService {
             }
         }
         for (int i = 0; i < items.size(); i++) {
+            var itemReq = items.get(i);
+            if (itemReq.getSerialNumbers() == null || itemReq.getSerialNumbers().isEmpty()) {
+                continue;
+            }
             var line = order.getItems().get(i);
-            for (String number : items.get(i).getSerialNumbers()) {
+            for (String number : itemReq.getSerialNumbers()) {
                 ProductSerial serial = byNumber.get(number.trim());
                 if (serial == null || !serial.getProductId().equals(line.getProductId())
                         || serial.getStatus() != ProductSerialStatus.IN_STOCK) {

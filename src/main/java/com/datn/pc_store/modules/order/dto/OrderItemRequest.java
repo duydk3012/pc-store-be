@@ -3,7 +3,6 @@ package com.datn.pc_store.modules.order.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import lombok.*;
@@ -24,8 +23,7 @@ public class OrderItemRequest {
     @Schema(description = "Số lượng đặt mua", example = "1")
     private Integer quantity;
 
-    @NotEmpty(message = "Phải nhập serial cho sản phẩm đặt mua")
-    @Schema(description = "Mỗi sản phẩm trong dòng hàng phải có một mã serial còn trong kho")
+    @Schema(description = "Mã serial tùy chọn khi tạo đơn (nếu có, thường nhân viên kho sẽ gán ở bước đóng gói)")
     private List<@NotBlank String> serialNumbers;
 
     @Min(value = 0, message = "Đơn giá không được âm")

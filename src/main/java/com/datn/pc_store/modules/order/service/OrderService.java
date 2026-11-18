@@ -225,7 +225,9 @@ public class OrderService {
         }
 
         Order saved = orderRepository.save(order);
-        orderSerialService.reserve(saved, req.getItems());
+        if (req.getItems() != null && req.getItems().stream().anyMatch(it -> it.getSerialNumbers() != null && !it.getSerialNumbers().isEmpty())) {
+            orderSerialService.reserve(saved, req.getItems());
+        }
         log.info("Đã tạo đơn hàng mới id={}, code={}, userId={}, finalAmount={}",
                 saved.getId(), saved.getCode(), saved.getUserId(), saved.getFinalAmount());
 
@@ -328,9 +330,17 @@ public class OrderService {
                 continue;
             }
 
-            // Xóa các liên kết serial cũ của item này (nếu có để quét lại)
+            // Xóa các liên kết serial cũ của item này (nếu có để quét lại) và hoàn trả trạng thái IN_STOCK
             List<OrderItemSerial> existingOis = orderItemSerialRepository.findAllByOrderItemId(orderItemId);
             if (!existingOis.isEmpty()) {
+                List<Long> oldSerialIds = existingOis.stream().map(OrderItemSerial::getProductSerialId).toList();
+                List<ProductSerial> oldSerials = productSerialRepository.findAllByIdIn(oldSerialIds);
+                for (ProductSerial oldPs : oldSerials) {
+                    if (oldPs.getStatus() == ProductSerialStatus.PACKING) {
+                        oldPs.setStatus(ProductSerialStatus.IN_STOCK);
+                    }
+                }
+                productSerialRepository.saveAll(oldSerials);
                 orderItemSerialRepository.deleteAll(existingOis);
             }
 
@@ -345,6 +355,9 @@ public class OrderService {
             for (ProductSerial ps : serials) {
                 if (!ps.getProductId().equals(item.getProductId())) {
                     throw new BadRequestException("Serial '" + ps.getSerialNumber() + "' không thuộc sản phẩm ID: " + item.getProductId());
+                }
+                if (ps.getStatus() != ProductSerialStatus.IN_STOCK) {
+                    throw new BadRequestException("Serial '" + ps.getSerialNumber() + "' không còn trong kho (trạng thái hiện tại: " + ps.getStatus() + ")");
                 }
 
                 // Gán liên kết OrderItemSerial
