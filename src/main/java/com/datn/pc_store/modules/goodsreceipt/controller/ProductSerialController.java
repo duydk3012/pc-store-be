@@ -21,7 +21,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/product-serials")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STAFF_WAREHOUSE', 'STAFF_TECH', 'STAFF_SALES')")
 @Tag(name = "Product Serials", description = "Tra cứu và cập nhật serial sản phẩm. Yêu cầu Bearer token")
 public class ProductSerialController {
 

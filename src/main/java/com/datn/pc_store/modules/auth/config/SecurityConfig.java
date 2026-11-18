@@ -86,7 +86,14 @@ public class SecurityConfig {
                                 "/api/warranty-requests", "/api/warranty-requests/**")
                         .hasAnyRole("ADMIN", "MANAGER", "STAFF_SALES")
 
-                        // Orders: ownership and allowed transitions are checked by OrderService.
+                        // Orders: serial assignment and carrier handover restricted to authorized staff.
+                        // Order completion, creation, updates, and reads require authentication.
+                        .requestMatchers(HttpMethod.POST, "/api/orders/*/assign-serials")
+                        .hasAnyRole("ADMIN", "MANAGER", "STAFF_WAREHOUSE", "STAFF_SALES")
+                        .requestMatchers(HttpMethod.POST, "/api/orders/*/handover")
+                        .hasAnyRole("ADMIN", "MANAGER", "STAFF_WAREHOUSE")
+                        .requestMatchers(HttpMethod.POST, "/api/orders/*/complete")
+                        .authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/orders", "/api/orders/**")
                         .hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers("/api/orders", "/api/orders/**").authenticated()

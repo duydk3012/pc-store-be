@@ -101,7 +101,6 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/assign-serials")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STAFF_WAREHOUSE', 'STAFF_SALES')")
     @Operation(summary = "GĐ 3: Quét mã Serial định danh & đóng gói sản phẩm",
             description = "Nhân viên kho quét gán mã serial cho các sản phẩm trong đơn hàng. Các serial sẽ tự động chuyển sang trạng thái PACKING (Đang đóng gói).")
     public ResponseEntity<OrderResponse> assignSerials(
@@ -112,7 +111,6 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/handover")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STAFF_WAREHOUSE')")
     @Operation(summary = "GĐ 3 Bước 5: Bàn giao đơn hàng cho ĐVVC ngoài",
             description = "Bàn giao kiện hàng cho đối tác vận chuyển, chuyển trạng thái serial sang DELIVERING (Đang giao).")
     public ResponseEntity<OrderResponse> handoverToCarrier(
@@ -122,7 +120,6 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/complete")
-    @PreAuthorize("isAuthenticated()")
     @Operation(summary = "GĐ 4 Bước 3: Khách nhận hàng & Hoàn tất đơn hàng",
             description = "Xác nhận nhận hàng thành công. Trạng thái đơn hàng chuyển thành COMPLETED và TẤT CẢ CÁC SERIAL CHUYỂN SANG TRẠNG THÁI SOLD (ĐÃ BÁN).")
     public ResponseEntity<OrderResponse> completeOrder(
