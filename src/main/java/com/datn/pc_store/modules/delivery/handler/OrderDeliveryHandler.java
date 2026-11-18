@@ -7,6 +7,7 @@ import com.datn.pc_store.modules.delivery.enums.DeliveryStatus;
 import com.datn.pc_store.modules.order.entity.Order;
 import com.datn.pc_store.modules.order.enums.OrderStatus;
 import com.datn.pc_store.modules.order.repository.OrderRepository;
+import com.datn.pc_store.modules.order.service.InvoiceService;
 import com.datn.pc_store.modules.order.service.OrderSerialService;
 import com.datn.pc_store.modules.warranty.service.WarrantyActivationService;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ public class OrderDeliveryHandler implements DeliveryResourceHandler {
     private final OrderRepository orderRepository;
     private final OrderSerialService orderSerialService;
     private final WarrantyActivationService warrantyActivationService;
+    private final InvoiceService invoiceService;
 
     @Override
     public DeliveryResourceType getResourceType() {
@@ -49,9 +51,11 @@ public class OrderDeliveryHandler implements DeliveryResourceHandler {
             order.setStatus(OrderStatus.COMPLETED);
             orderSerialService.markSold(resourceId);
             warrantyActivationService.activateForCompletedOrder(order);
+            invoiceService.createInvoiceForCompletedOrder(order);
         } else {
             order.setStatus(OrderStatus.RETURNED);
             orderSerialService.release(resourceId);
+            invoiceService.cancelInvoiceForOrder(resourceId);
         }
     }
 
