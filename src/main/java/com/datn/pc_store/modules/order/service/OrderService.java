@@ -56,6 +56,7 @@ public class OrderService {
     private final OrderMapper orderMapper;
     private final OrderSerialService orderSerialService;
     private final com.datn.pc_store.modules.warranty.service.WarrantyActivationService warrantyActivationService;
+    private final InvoiceService invoiceService;
 
     @Transactional(readOnly = true)
     public PageResponse<OrderResponse> getAllOrders(
@@ -253,7 +254,7 @@ public class OrderService {
                 }
             } else if (newStatus == OrderStatus.COMPLETED) {
                 if (currentStatus != OrderStatus.DELIVERING) {
-                    throw new BadRequestException("Chỉ có thể xác nhận nhận hàng khi đơn đang trong quá trình xử lý/vận chuyển.");
+                    throw new BadRequestException("Chỉ có thể xác nhận nhận hàng khi đơn đang trong quá trình vận chuyển.");
                 }
             } else {
                 throw new BadRequestException("Khách hàng chỉ được phép hủy đơn chờ duyệt hoặc xác nhận nhận hàng.");
@@ -269,7 +270,9 @@ public class OrderService {
             orderSerialService.markSold(id);
             order.setStatus(OrderStatus.COMPLETED);
             warrantyActivationService.activateForCompletedOrder(order);
-            return mapOrderWithSerials(orderRepository.save(order));
+            Order savedOrder = orderRepository.save(order);
+            invoiceService.createInvoiceForCompletedOrder(savedOrder);
+            return mapOrderWithSerials(savedOrder);
         }
 
         if (currentStatus == OrderStatus.DELIVERING
@@ -280,8 +283,9 @@ public class OrderService {
         // Kiểm tra logic luồng chuyển đổi trạng thái hợp lệ
         validateStatusTransition(currentStatus, newStatus);
 
-        if (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REJECTED) {
+        if (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REJECTED || newStatus == OrderStatus.RETURNED) {
             orderSerialService.release(id);
+            invoiceService.cancelInvoiceForOrder(id);
         }
 
         order.setStatus(newStatus);
@@ -356,7 +360,7 @@ public class OrderService {
             productSerialRepository.saveAll(serials);
         }
 
-        // Cập nhật trạng thái đơn hàng sang DELIVERING (Đang đóng gói/xử lý) nếu đang ở CONFIRMED
+        // Cập nhật trạng thái đơn hàng sang DELIVERING nếu đang ở CONFIRMED hoặc PENDING
         if (order.getStatus() == OrderStatus.CONFIRMED || order.getStatus() == OrderStatus.PENDING) {
             order.setStatus(OrderStatus.DELIVERING);
             orderRepository.save(order);
