@@ -1,6 +1,7 @@
 package com.datn.pc_store.modules.warranty.dto;
 
 import com.datn.pc_store.modules.warranty.enums.WarrantyPartStatus;
+import com.datn.pc_store.modules.warranty.enums.WarrantyPartType;
 import com.datn.pc_store.modules.warranty.enums.WarrantyRequestStatus;
 
 import java.time.Instant;
@@ -30,6 +31,7 @@ public record AdminWarrantyRequestResponse(
         String faultType,
         String solution,
         WarrantyRequestStatus status,
+        long totalCost,
         Instant completedAt,
         Instant createdDate,
         Instant lastModifiedDate,
@@ -38,14 +40,18 @@ public record AdminWarrantyRequestResponse(
     public record Part(
             Long id,
             Long warrantyRequestId,
+            WarrantyPartType type,
+            String typeName,
             Long productId,
             String productName,
             String productCode,
             int quantity,
+            long originalPrice,
+            int warrantyCoveragePercent,
             long unitCost,
+            long totalAmount,
             WarrantyPartStatus status,
             List<Long> productSerialIds,
             List<String> serialNumbers
     ) {}
 }
-

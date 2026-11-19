@@ -3,7 +3,9 @@ package com.datn.pc_store.modules.warranty.controller;
 import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.modules.warranty.dto.AdminWarrantyRequestResponse;
 import com.datn.pc_store.modules.warranty.dto.TechnicalHandlingUpdateRequest;
+import com.datn.pc_store.modules.warranty.dto.WarrantyPartAssignSerialsRequest;
 import com.datn.pc_store.modules.warranty.dto.WarrantyRequestCreateRequest;
+import com.datn.pc_store.modules.warranty.enums.WarrantyPartType;
 import com.datn.pc_store.modules.warranty.enums.WarrantyRequestStatus;
 import com.datn.pc_store.modules.warranty.service.AdminWarrantyService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -55,18 +57,44 @@ public class AdminWarrantyRequestController {
         return ResponseEntity.ok(service.updateTechnicalHandling(id, req));
     }
 
-    public record AddPartInput(Long productId, Integer quantity, Long unitCost) {}
+    public record AddPartInput(
+            WarrantyPartType type,
+            Long productId,
+            Integer quantity,
+            Integer warrantyCoveragePercent,
+            Long unitCost
+    ) {}
 
     @PostMapping("/{id}/parts")
-    @Operation(summary = "Thêm linh kiện thay thế vào phiếu bảo hành")
+    @Operation(summary = "Thêm linh kiện thay thế hoặc chi phí sửa chữa vào phiếu bảo hành")
     public ResponseEntity<AdminWarrantyRequestResponse> addPart(
             @PathVariable Long id,
             @RequestBody AddPartInput input) {
         return ResponseEntity.ok(service.addPartToRequest(
                 id,
-                input.productId() != null ? input.productId() : 1L,
-                input.quantity() != null ? input.quantity() : 1,
-                input.unitCost() != null ? input.unitCost() : 0L
+                input.type(),
+                input.productId(),
+                input.quantity(),
+                input.warrantyCoveragePercent(),
+                input.unitCost()
         ));
+    }
+
+    @PutMapping("/{requestId}/parts/{partId}/assign-serials")
+    @Operation(summary = "Thủ kho quét serial gán cho linh kiện bảo hành/nâng cấp")
+    public ResponseEntity<AdminWarrantyRequestResponse> assignSerials(
+            @PathVariable Long requestId,
+            @PathVariable Long partId,
+            @RequestBody WarrantyPartAssignSerialsRequest req) {
+        return ResponseEntity.ok(service.assignSerialsToPart(requestId, partId, req));
+    }
+
+    @DeleteMapping("/{requestId}/parts/{partId}/serials/{serialId}")
+    @Operation(summary = "Tháo gỡ serial đã gán khỏi linh kiện (hoàn trả về kho)")
+    public ResponseEntity<AdminWarrantyRequestResponse> removeSerial(
+            @PathVariable Long requestId,
+            @PathVariable Long partId,
+            @PathVariable Long serialId) {
+        return ResponseEntity.ok(service.removeSerialFromPart(requestId, partId, serialId));
     }
 }
