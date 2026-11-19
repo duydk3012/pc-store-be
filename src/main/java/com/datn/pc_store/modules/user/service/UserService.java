@@ -18,6 +18,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Slf4j
@@ -45,6 +49,48 @@ public class UserService {
             }
         }
         return PageResponse.of(userRepository.searchUsers(keyword, role, status, pageable).map(userMapper::toResponse));
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserRoleCountResponse> countUsersByRole(RoleType roleFilter, UserStatus status) {
+        List<Object[]> results = userRepository.countUsersByRoleGrouped(roleFilter, status);
+        Map<RoleType, Long> countMap = new EnumMap<>(RoleType.class);
+
+        if (results != null) {
+            for (Object[] row : results) {
+                if (row != null && row.length >= 2 && row[0] != null) {
+                    RoleType role = null;
+                    if (row[0] instanceof RoleType rt) {
+                        role = rt;
+                    } else if (row[0] instanceof Number num) {
+                        role = RoleType.fromValue(num.intValue());
+                    }
+                    if (role != null) {
+                        long count = row[1] != null ? ((Number) row[1]).longValue() : 0L;
+                        countMap.put(role, count);
+                    }
+                }
+            }
+        }
+
+        RoleType[] targetRoles = (roleFilter != null)
+                ? new RoleType[]{roleFilter}
+                : RoleType.values();
+
+        List<UserRoleCountResponse> response = new ArrayList<>();
+        for (RoleType role : targetRoles) {
+            response.add(UserRoleCountResponse.builder()
+                    .role(role)
+                    .label(role.getLabel())
+                    .count(countMap.getOrDefault(role, 0L))
+                    .build());
+        }
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public long countUsers(RoleType role, UserStatus status) {
+        return userRepository.countUsers(role, status);
     }
 
     @Transactional(readOnly = true)
