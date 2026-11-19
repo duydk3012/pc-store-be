@@ -10,5 +10,15 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
     List<OrderItem> findAllByOrderId(Long orderId);
 
     boolean existsByProductIdAndOrder_UserIdAndOrder_Status(Long productId, Long userId, OrderStatus status);
+
+    @org.springframework.data.jpa.repository.Query("""
+        SELECT DISTINCT oi.productId FROM OrderItem oi
+        JOIN oi.order o
+        WHERE o.userId = :userId
+        ORDER BY oi.id DESC
+    """)
+    List<Long> findRecentPurchasedProductIds(
+            @org.springframework.data.repository.query.Param("userId") Long userId,
+            org.springframework.data.domain.Pageable pageable);
 }
 
