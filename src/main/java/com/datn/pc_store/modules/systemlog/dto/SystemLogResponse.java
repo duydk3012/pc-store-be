@@ -1,0 +1,37 @@
+package com.datn.pc_store.modules.systemlog.dto;
+
+import com.datn.pc_store.modules.systemlog.enums.SystemLogAction;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogModule;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogStatus;
+import com.datn.pc_store.modules.user.enums.RoleType;
+import lombok.*;
+
+import java.time.Instant;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class SystemLogResponse {
+
+    private Long id;
+    private Long userId;
+    private String username;
+    private RoleType userRole;
+    private SystemLogModule module;
+    private String moduleLabel;
+    private SystemLogAction action;
+    private String actionLabel;
+    private SystemLogStatus status;
+    private String resourceType;
+    private Long resourceId;
+    private String resourceCode;
+    private String description;
+    private String detailJson;
+    private String ipAddress;
+    private String userAgent;
+    private String httpMethod;
+    private String requestUri;
+    private Instant createdDate;
+}
