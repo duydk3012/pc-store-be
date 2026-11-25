@@ -111,7 +111,7 @@ public class AccountVerificationService {
         AccountChallenge challenge = challenges.findByUserIdAndPurpose(user.getId(), purpose)
                 .orElseThrow(AccountVerificationService::invalid);
         if (challenge.isConsumed() || !challenge.getExpiresAt().isAfter(Instant.now())
-                || challenge.getAttempts() >= 5 || !challenge.getDestination().equals(destination)) throw invalid();
+                || challenge.getAttempts() >= 5 || !challenge.getDestination().equalsIgnoreCase(destination)) throw invalid();
         challenge.setAttempts(challenge.getAttempts() + 1);
         if (!encoder.matches(code, challenge.getCodeHash())) throw invalid();
         challenge.setConsumed(true);

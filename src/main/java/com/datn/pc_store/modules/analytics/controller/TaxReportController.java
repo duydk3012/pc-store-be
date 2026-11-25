@@ -67,7 +67,9 @@ public class TaxReportController {
     )
     @Operation(summary = "Xuất file Excel (.xlsx) Báo cáo Hoạch toán Thuế (Sheet 1: Tờ khai tổng hợp, Sheet 2: Bảng kê hóa đơn)")
     public ResponseEntity<byte[]> exportTaxExcel(@Valid @ParameterObject TaxReportFilterRequest filter) {
-        int year = (filter != null && filter.getYear() != null) ? filter.getYear() : java.time.LocalDate.now().getYear();
+        int year = (filter != null && filter.getYear() != null)
+                ? filter.getYear()
+                : java.time.LocalDate.now(com.datn.pc_store.modules.analytics.util.AnalyticsDateHelper.VN_ZONE).getYear();
         byte[] excelBytes = taxExcelExportService.exportTaxReportToExcel(filter);
 
         String filename = "Bao_Cao_Hoach_Toan_Thue_" + year + ".xlsx";

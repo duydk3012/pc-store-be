@@ -26,16 +26,17 @@ public interface AnalyticsTaxRepository extends JpaRepository<Invoice, Long> {
 
     @Query(value = """
         SELECT 
-            QUARTER(invoice_date) AS q,
+            QUARTER(CONVERT_TZ(invoice_date, '+00:00', '+07:00')) AS q,
             COALESCE(SUM(amount), 0) AS quarterRevenue,
             COUNT(id) AS invoiceCount
         FROM invoices
         WHERE status = 2 
-          AND YEAR(invoice_date) = :year
+          AND invoice_date >= :fromTime
+          AND invoice_date <= :toTime
         GROUP BY q
         ORDER BY q ASC
         """, nativeQuery = true)
-    List<Object[]> queryQuarterlyRevenueByYear(@Param("year") int year);
+    List<Object[]> queryQuarterlyRevenueBetween(@Param("fromTime") Instant fromTime, @Param("toTime") Instant toTime);
 
     @Query(value = """
         SELECT 
@@ -44,7 +45,7 @@ public interface AnalyticsTaxRepository extends JpaRepository<Invoice, Long> {
             i.invoice_date AS invoiceDate,
             o.code AS orderCode,
             COALESCE(u.full_name, 'Khách vãng lai') AS customerName,
-            COALESCE(u.phone, 'N/A') AS customerPhone,
+            COALESCE(u.phone_number, 'N/A') AS customerPhone,
             i.total_amount AS totalAmount,
             i.discount_amount AS discountAmount,
             i.amount AS amount,
@@ -75,7 +76,7 @@ public interface AnalyticsTaxRepository extends JpaRepository<Invoice, Long> {
             i.invoice_date AS invoiceDate,
             o.code AS orderCode,
             COALESCE(u.full_name, 'Khách vãng lai') AS customerName,
-            COALESCE(u.phone, 'N/A') AS customerPhone,
+            COALESCE(u.phone_number, 'N/A') AS customerPhone,
             i.total_amount AS totalAmount,
             i.discount_amount AS discountAmount,
             i.amount AS amount,

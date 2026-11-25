@@ -26,6 +26,8 @@ public interface CategoryRepository extends JpaRepository<Category, Long>, JpaSp
 
     List<Category> findByParentIsNull();
 
+    List<Category> findByStatus(CategoryStatus status);
+
     List<Category> findByParentIsNullAndStatus(CategoryStatus status);
 
     List<Category> findByParentId(Long parentId);

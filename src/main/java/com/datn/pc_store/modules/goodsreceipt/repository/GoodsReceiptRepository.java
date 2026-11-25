@@ -39,8 +39,8 @@ public interface GoodsReceiptRepository extends JpaRepository<GoodsReceipt, Long
              ))
           )
           AND (:purchaseOrderId IS NULL OR gr.purchaseOrderId = :purchaseOrderId)
-          AND (:fromDate IS NULL OR gr.receivedAt >= :fromDate)
-          AND (:toDate IS NULL OR gr.receivedAt <= :toDate)
+          AND (:fromDate IS NULL OR COALESCE(gr.receivedAt, gr.createdDate) >= :fromDate)
+          AND (:toDate IS NULL OR COALESCE(gr.receivedAt, gr.createdDate) <= :toDate)
         """)
     Page<GoodsReceipt> searchGoodsReceipts(@Param("keyword") String keyword,
                                          @Param("status") GoodsReceiptStatus status,

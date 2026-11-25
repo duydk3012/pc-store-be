@@ -21,12 +21,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CategoryService {
+
+    private static final Set<String> SORTABLE_FIELDS = Set.of(
+            "id", "name", "slug", "status", "createdDate", "createdBy", "lastModifiedDate", "lastModifiedBy"
+    );
 
     private final CategoryRepository categoryRepository;
     private final CategoryMapper categoryMapper;
@@ -38,6 +45,11 @@ public class CategoryService {
             Long parentId,
             Pageable pageable
     ) {
+        for (var order : pageable.getSort()) {
+            if (!SORTABLE_FIELDS.contains(order.getProperty())) {
+                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + order.getProperty());
+            }
+        }
         log.info("Lấy danh sách danh mục với keyword: '{}', status: '{}', parentId: {}, pageable: {}",
                 keyword, status, parentId, pageable);
         Page<Category> page = categoryRepository.searchCategories(keyword, status, parentId, pageable);
@@ -47,27 +59,58 @@ public class CategoryService {
     @Transactional(readOnly = true)
     public List<CategoryTreeResponse> getCategoryTree(boolean onlyActive) {
         log.info("Lấy cây danh mục đa cấp, onlyActive: {}", onlyActive);
-        List<Category> rootCategories = onlyActive
-                ? categoryRepository.findByParentIsNullAndStatus(CategoryStatus.ACTIVE)
-                : categoryRepository.findByParentIsNull();
+        List<Category> allCategories = onlyActive
+                ? categoryRepository.findByStatus(CategoryStatus.ACTIVE)
+                : categoryRepository.findAll();
 
-        return rootCategories.stream()
-                .map(root -> buildTree(root, onlyActive))
-                .toList();
+        Map<Long, CategoryTreeResponse> nodeMap = new HashMap<>();
+        List<CategoryTreeResponse> roots = new ArrayList<>();
+
+        for (Category c : allCategories) {
+            CategoryTreeResponse node = categoryMapper.toTreeResponse(c);
+            node.setChildren(new ArrayList<>());
+            nodeMap.put(c.getId(), node);
+        }
+
+        for (Category c : allCategories) {
+            CategoryTreeResponse node = nodeMap.get(c.getId());
+            Long parentId = c.getParent() != null ? c.getParent().getId() : null;
+            if (parentId == null) {
+                roots.add(node);
+            } else {
+                CategoryTreeResponse parentNode = nodeMap.get(parentId);
+                if (parentNode != null) {
+                    parentNode.getChildren().add(node);
+                }
+            }
+        }
+        return roots;
     }
 
     @Transactional(readOnly = true)
     public CategoryResponse getCategoryById(Long id) {
-        log.info("Lấy thông tin danh mục theo id: {}", id);
+        return getCategoryById(id, false);
+    }
+
+    @Transactional(readOnly = true)
+    public CategoryResponse getCategoryById(Long id, boolean publicOnly) {
+        log.info("Lấy thông tin danh mục theo id: {}, publicOnly: {}", id, publicOnly);
         Category category = categoryRepository.findById(id)
+                .filter(c -> !publicOnly || c.getStatus() == CategoryStatus.ACTIVE)
                 .orElseThrow(() -> new ResourceNotFoundException("Danh mục", "id", id));
         return categoryMapper.toResponse(category);
     }
 
     @Transactional(readOnly = true)
     public CategoryResponse getCategoryBySlug(String slug) {
-        log.info("Lấy thông tin danh mục theo slug: {}", slug);
+        return getCategoryBySlug(slug, false);
+    }
+
+    @Transactional(readOnly = true)
+    public CategoryResponse getCategoryBySlug(String slug, boolean publicOnly) {
+        log.info("Lấy thông tin danh mục theo slug: {}, publicOnly: {}", slug, publicOnly);
         Category category = categoryRepository.findBySlug(slug)
+                .filter(c -> !publicOnly || c.getStatus() == CategoryStatus.ACTIVE)
                 .orElseThrow(() -> new ResourceNotFoundException("Danh mục", "slug", slug));
         return categoryMapper.toResponse(category);
     }
@@ -183,21 +226,6 @@ public class CategoryService {
         // Soft delete bằng cách gọi delete (được kích hoạt thông qua @SQLDelete trên Entity)
         categoryRepository.delete(category);
         log.info("Đã xóa mềm danh mục id: {} thành công", id);
-    }
-
-    private CategoryTreeResponse buildTree(Category category, boolean onlyActive) {
-        CategoryTreeResponse node = categoryMapper.toTreeResponse(category);
-
-        List<Category> children = onlyActive
-                ? categoryRepository.findByParentIdAndStatus(category.getId(), CategoryStatus.ACTIVE)
-                : categoryRepository.findByParentId(category.getId());
-
-        List<CategoryTreeResponse> childResponses = new ArrayList<>();
-        for (Category child : children) {
-            childResponses.add(buildTree(child, onlyActive));
-        }
-        node.setChildren(childResponses);
-        return node;
     }
 
     private boolean isDescendant(Category potentialParent, Long targetId) {

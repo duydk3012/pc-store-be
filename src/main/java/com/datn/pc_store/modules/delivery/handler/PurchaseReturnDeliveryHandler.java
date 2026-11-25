@@ -12,6 +12,10 @@ import com.datn.pc_store.modules.purchasereturn.repository.PurchaseReturnReposit
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+
 @Component
 @RequiredArgsConstructor
 public class PurchaseReturnDeliveryHandler implements DeliveryResourceHandler {
@@ -35,6 +39,18 @@ public class PurchaseReturnDeliveryHandler implements DeliveryResourceHandler {
     @Override
     public String getResourceCode(Long resourceId) {
         return purchaseReturnRepository.findById(resourceId).map(PurchaseReturn::getCode).orElse(null);
+    }
+
+    @Override
+    public Map<Long, String> getResourceCodes(Collection<Long> resourceIds) {
+        if (resourceIds == null || resourceIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> codes = new HashMap<>();
+        for (PurchaseReturn pr : purchaseReturnRepository.findAllById(resourceIds)) {
+            codes.put(pr.getId(), pr.getCode());
+        }
+        return codes;
     }
 
     @Override
