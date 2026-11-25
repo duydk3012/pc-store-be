@@ -1,6 +1,7 @@
 package com.datn.pc_store.modules.auth.security;
 
 import com.datn.pc_store.modules.user.entity.User;
+import com.datn.pc_store.modules.user.enums.RoleType;
 import com.datn.pc_store.modules.user.enums.UserStatus;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -19,6 +20,14 @@ public class CustomUserDetails implements UserDetails {
 
     public Long getId() {
         return user.getId();
+    }
+
+    public RoleType getRole() {
+        return user.getRole();
+    }
+
+    public String getFullName() {
+        return user.getFullName();
     }
 
     public boolean isEmailVerified() {
