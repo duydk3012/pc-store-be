@@ -14,6 +14,10 @@ import com.datn.pc_store.modules.order.repository.OrderItemSerialRepository;
 import com.datn.pc_store.modules.order.repository.OrderRepository;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
+import com.datn.pc_store.modules.systemlog.dto.SystemLogCreateCommand;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogAction;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogModule;
+import com.datn.pc_store.modules.systemlog.event.SystemLogPublisher;
 import com.datn.pc_store.modules.user.entity.User;
 import com.datn.pc_store.modules.user.repository.UserRepository;
 import com.datn.pc_store.modules.warranty.dto.*;
@@ -51,6 +55,7 @@ public class AdminWarrantyService {
     private final BrandRepository brands;
     private final UserRepository users;
     private final WarrantyRequestService warrantyRequestService;
+    private final SystemLogPublisher systemLogPublisher;
 
     // ==================== 1. PRODUCT WARRANTIES ====================
 
@@ -138,7 +143,19 @@ public class AdminWarrantyService {
             w.setStatus(true);
         }
         Warranty saved = warranties.save(w);
-        return buildWarrantyResponse(saved, Instant.now());
+        AdminWarrantyResponse response = buildWarrantyResponse(saved, Instant.now());
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(SystemLogAction.UPDATE)
+                    .resourceType("WARRANTY")
+                    .resourceId(saved.getId())
+                    .resourceCode(response.serialNumber())
+                    .description("Gia hạn bảo hành thêm " + days + " ngày cho thiết bị " + response.serialNumber())
+                    .detailMap(Map.of("additionalDays", days, "newEndDate", saved.getEndDate().toString()))
+                    .build());
+        }
+        return response;
     }
 
     @Transactional
@@ -147,7 +164,18 @@ public class AdminWarrantyService {
                 .orElseThrow(() -> new ResourceNotFoundException("Bảo hành sản phẩm", "id", id));
         w.setStatus(false);
         Warranty saved = warranties.save(w);
-        return buildWarrantyResponse(saved, Instant.now());
+        AdminWarrantyResponse response = buildWarrantyResponse(saved, Instant.now());
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(SystemLogAction.UPDATE_STATUS)
+                    .resourceType("WARRANTY")
+                    .resourceId(saved.getId())
+                    .resourceCode(response.serialNumber())
+                    .description("Hủy hiệu lực bảo hành cho thiết bị " + response.serialNumber())
+                    .build());
+        }
+        return response;
     }
 
     // ==================== 2. WARRANTY REQUESTS & TECHNICAL ====================
@@ -209,6 +237,16 @@ public class AdminWarrantyService {
     public AdminWarrantyRequestResponse createRequest(WarrantyRequestCreateRequest input) {
         WarrantyRequestResponse res = warrantyRequestService.create(input);
         WarrantyRequest created = requests.findById(res.id()).orElseThrow();
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(SystemLogAction.CREATE)
+                    .resourceType("WARRANTY_REQUEST")
+                    .resourceId(created.getId())
+                    .resourceCode(created.getRequestCode())
+                    .description("Tiếp nhận phiếu yêu cầu bảo hành " + created.getRequestCode())
+                    .build());
+        }
         return buildRequestResponse(created);
     }
 
@@ -289,6 +327,17 @@ public class AdminWarrantyService {
         }
 
         WarrantyRequest saved = requests.save(req);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(input.status() != null ? SystemLogAction.UPDATE_STATUS : SystemLogAction.UPDATE)
+                    .resourceType("WARRANTY_REQUEST")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getRequestCode())
+                    .description("Cập nhật xử lý kỹ thuật phiếu bảo hành " + saved.getRequestCode())
+                    .detailMap(Map.of("status", saved.getStatus().name()))
+                    .build());
+        }
         return buildRequestResponse(saved);
     }
 
@@ -358,11 +407,6 @@ public class AdminWarrantyService {
         requests.save(req);
 
         return buildRequestResponse(req);
-    }
-
-    @Transactional
-    public AdminWarrantyRequestResponse addPartToRequest(Long requestId, Long productId, int quantity, long unitCost) {
-        return addPartToRequest(requestId, WarrantyPartType.WARRANTY, productId, quantity, 100, unitCost);
     }
 
     // ==================== 3. GÁN SERIAL CHO LINH KIỆN TỪ KHO ====================
@@ -442,6 +486,18 @@ public class AdminWarrantyService {
 
         part.setStatus(WarrantyPartStatus.RESERVED);
         parts.save(part);
+
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(SystemLogAction.ASSIGN_SERIAL)
+                    .resourceType("WARRANTY_REQUEST")
+                    .resourceId(warrantyReq.getId())
+                    .resourceCode(warrantyReq.getRequestCode())
+                    .description("Gán serial linh kiện thay thế cho phiếu bảo hành " + warrantyReq.getRequestCode())
+                    .detailMap(Map.of("partId", part.getId(), "serialCount", locked.size()))
+                    .build());
+        }
 
         return buildRequestResponse(warrantyReq);
     }
@@ -721,9 +777,9 @@ public class AdminWarrantyService {
         String policyName = "Chính sách tiêu chuẩn";
         int durationDays = 365;
         if (w.getWarrantyPolicyId() != null) {
-            Optional<WarrantPolicy> wpOpt = policies.findById(w.getWarrantyPolicyId());
+            Optional<WarrantyPolicy> wpOpt = policies.findById(w.getWarrantyPolicyId());
             if (wpOpt.isPresent()) {
-                WarrantPolicy wp = wpOpt.get();
+                WarrantyPolicy wp = wpOpt.get();
                 policyName = wp.getName();
                 durationDays = wp.getDurationDays();
             }

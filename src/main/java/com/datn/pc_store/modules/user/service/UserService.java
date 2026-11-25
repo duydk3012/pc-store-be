@@ -1,10 +1,14 @@
 package com.datn.pc_store.modules.user.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
-import com.datn.pc_store.common.exception.BadRequestException;
 import com.datn.pc_store.common.exception.DuplicateResourceException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
+import com.datn.pc_store.common.util.PaginationUtils;
 import com.datn.pc_store.modules.auth.service.RefreshTokenService;
+import com.datn.pc_store.modules.systemlog.dto.SystemLogCreateCommand;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogAction;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogModule;
+import com.datn.pc_store.modules.systemlog.event.SystemLogPublisher;
 import com.datn.pc_store.modules.user.dto.*;
 import com.datn.pc_store.modules.user.entity.User;
 import com.datn.pc_store.modules.user.enums.RoleType;
@@ -39,15 +43,11 @@ public class UserService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
+    private final SystemLogPublisher systemLogPublisher;
 
     @Transactional(readOnly = true)
     public PageResponse<UserResponse> getAllUsers(String keyword, RoleType role, UserStatus status, Pageable pageable) {
-        for (var order : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(order.getProperty())) {
-                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + order.getProperty()
-                        + ". Sử dụng sort=createdDate,desc hoặc bỏ tham số sort để dùng mặc định.");
-            }
-        }
+        PaginationUtils.validateSort(pageable, SORTABLE_FIELDS);
         return PageResponse.of(userRepository.searchUsers(keyword, role, status, pageable).map(userMapper::toResponse));
     }
 
@@ -113,6 +113,17 @@ public class UserService {
         user.setStatus(req.getStatus() != null ? req.getStatus() : UserStatus.ACTIVE);
         User saved = userRepository.save(user);
         log.info("Đã tạo người dùng id: {}", saved.getId());
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.USER)
+                    .action(SystemLogAction.CREATE)
+                    .resourceType("USER")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getUsername())
+                    .description("Tạo tài khoản người dùng mới: " + saved.getUsername())
+                    .detailMap(Map.of("username", saved.getUsername(), "role", saved.getRole().name(), "status", saved.getStatus().name()))
+                    .build());
+        }
         return userMapper.toResponse(saved);
     }
 
@@ -125,6 +136,9 @@ public class UserService {
         if (userRepository.existsByEmailAndIdNot(req.getEmail(), id)) {
             throw new DuplicateResourceException("Người dùng", "email", req.getEmail());
         }
+
+        RoleType oldRole = user.getRole();
+        UserStatus oldStatus = user.getStatus();
 
         boolean revokeSessions = !user.getUsername().equals(req.getUsername())
                 || req.getPassword() != null
@@ -150,27 +164,67 @@ public class UserService {
 
         User updated = userRepository.save(user);
         log.info("Đã cập nhật người dùng id: {}", id);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.USER)
+                    .action(SystemLogAction.UPDATE)
+                    .resourceType("USER")
+                    .resourceId(updated.getId())
+                    .resourceCode(updated.getUsername())
+                    .description("Cập nhật thông tin tài khoản người dùng " + updated.getUsername())
+                    .detailMap(Map.of(
+                            "oldRole", oldRole != null ? oldRole.name() : "",
+                            "newRole", updated.getRole() != null ? updated.getRole().name() : "",
+                            "oldStatus", oldStatus != null ? oldStatus.name() : "",
+                            "newStatus", updated.getStatus() != null ? updated.getStatus().name() : ""
+                    ))
+                    .build());
+        }
         return userMapper.toResponse(updated);
     }
 
     @Transactional
     public UserResponse updateStatus(Long id, UserStatus status) {
         User user = findUser(id);
+        UserStatus oldStatus = user.getStatus();
         if (user.getStatus() != status) {
             user.setStatus(status);
             revokeSessions(user);
         }
+        User saved = userRepository.save(user);
         log.info("Cập nhật trạng thái người dùng id: {} sang: {}", id, status);
-        return userMapper.toResponse(userRepository.save(user));
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.USER)
+                    .action(SystemLogAction.UPDATE_STATUS)
+                    .resourceType("USER")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getUsername())
+                    .description("Chuyển trạng thái người dùng " + saved.getUsername() + " từ " + oldStatus + " sang " + status)
+                    .detailMap(Map.of("oldStatus", oldStatus.name(), "newStatus", status.name()))
+                    .build());
+        }
+        return userMapper.toResponse(saved);
     }
 
     @Transactional
     public void deleteUser(Long id) {
         User user = findUser(id);
+        String username = user.getUsername();
         revokeSessions(user);
         userRepository.saveAndFlush(user);
         userRepository.delete(user);
         log.info("Đã xóa mềm người dùng id: {}", id);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.USER)
+                    .action(SystemLogAction.DELETE)
+                    .resourceType("USER")
+                    .resourceId(id)
+                    .resourceCode(username)
+                    .description("Xóa mềm tài khoản người dùng " + username)
+                    .build());
+        }
     }
 
     private User findUser(Long id) {
