@@ -33,4 +33,19 @@ public class WarrantyActivationService {
             warranties.save(warranty);
         }
     }
+
+    /** Vô hiệu hóa bảo hành khi đơn hàng hoàn tất bị hoàn trả. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void voidForOrder(Long orderId) {
+        for (var warranty : warranties.findAllByOrderId(orderId)) {
+            if (warranty.isStatus()) {
+                warranty.setStatus(false);
+                String prefix = warranty.getNote() != null && !warranty.getNote().isBlank()
+                        ? warranty.getNote() + "; "
+                        : "";
+                warranty.setNote(prefix + "Đã hủy hiệu lực do hoàn trả đơn hàng");
+                warranties.save(warranty);
+            }
+        }
+    }
 }

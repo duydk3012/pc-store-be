@@ -7,6 +7,8 @@ import com.datn.pc_store.modules.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.NotFound;
+import org.hibernate.annotations.NotFoundAction;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +33,7 @@ public class Order extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    @NotFound(action = NotFoundAction.IGNORE)
     private User user;
 
     @Column(nullable = false)

@@ -44,6 +44,8 @@ public interface ProductSerialRepository extends JpaRepository<ProductSerial, Lo
 
     List<ProductSerial> findAllByProductIdAndIsTerminatedFalse(Long productId);
 
+    long countByProductIdAndStatusAndIsTerminatedFalse(Long productId, ProductSerialStatus status);
+
     @Query("""
         SELECT ps FROM ProductSerial ps
         WHERE ps.productId = :productId

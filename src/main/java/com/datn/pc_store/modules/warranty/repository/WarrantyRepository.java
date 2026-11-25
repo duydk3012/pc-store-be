@@ -48,4 +48,12 @@ public interface WarrantyRepository extends JpaRepository<Warranty, Long> {
     List<Warranty> findBySerialNumber(@Param("serialNumber") String serialNumber);
 
     List<Warranty> findByOrderItemSerialId(Long orderItemSerialId);
+
+    @Query("""
+        select w from Warranty w
+        join OrderItemSerial s on s.id = w.orderItemSerialId
+        join OrderItem oi on oi.id = s.orderItemId
+        where oi.order.id = :orderId
+        """)
+    List<Warranty> findAllByOrderId(@Param("orderId") Long orderId);
 }

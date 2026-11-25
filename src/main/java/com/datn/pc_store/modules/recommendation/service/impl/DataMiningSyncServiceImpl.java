@@ -1,5 +1,7 @@
 package com.datn.pc_store.modules.recommendation.service.impl;
 
+import com.datn.pc_store.common.exception.BadRequestException;
+import com.datn.pc_store.common.exception.ResourceNotFoundException;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
 import com.datn.pc_store.modules.recommendation.dto.request.SyncMiningPayloadRequest;
@@ -21,10 +23,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -33,6 +38,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DataMiningSyncServiceImpl implements DataMiningSyncService {
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper().findAndRegisterModules();
+
     private final MiningModelRunRepository modelRunRepository;
     private final AssociationRuleRepository associationRuleRepository;
     private final CustomerClusterRepository customerClusterRepository;
@@ -40,11 +47,14 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
     private final ProductRecommendationRepository productRecommendationRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+    private final PlatformTransactionManager transactionManager;
 
     @Override
-    @Transactional
     public MiningModelRunDto syncModelData(SyncMiningPayloadRequest request) {
+        if (request == null || request.getModelType() == null || request.getAlgorithmName() == null || request.getAlgorithmName().isBlank()) {
+            throw new BadRequestException("Thiếu modelType hoặc algorithmName khi đồng bộ mô hình.");
+        }
+
         log.info("Starting sync for model type: {}, algorithm: {}", request.getModelType(), request.getAlgorithmName());
 
         String parametersJson = toJsonString(request.getParameters());
@@ -52,7 +62,7 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
 
         MiningModelRun modelRun = MiningModelRun.builder()
                 .modelType(request.getModelType())
-                .algorithmName(request.getAlgorithmName())
+                .algorithmName(request.getAlgorithmName().trim())
                 .runStatus(RunStatus.RUNNING)
                 .isActive(0)
                 .dataOrigin(request.getDataOrigin() != null ? request.getDataOrigin() : com.datn.pc_store.modules.recommendation.enums.DataOrigin.REAL)
@@ -65,36 +75,58 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
                 .build();
 
         modelRun = modelRunRepository.save(modelRun);
+        final MiningModelRun initialRun = modelRun;
+        AtomicReference<MiningModelRun> savedRunRef = new AtomicReference<>(modelRun);
 
         try {
-            if (request.getModelType() == ModelType.ASSOCIATION_RULES) {
-                syncAssociationRules(modelRun, request.getRules());
-            } else if (request.getModelType() == ModelType.CUSTOMER_CLUSTERING) {
-                syncCustomerClustering(modelRun, request.getClusterRecommendations(), request.getCustomerAssignments());
-            } else if (request.getModelType() == ModelType.CONTENT_BASED) {
-                syncContentBased(modelRun, request.getContentRecommendations());
-            }
+            executeInTransaction(() -> {
+                if (request.getModelType() == ModelType.ASSOCIATION_RULES) {
+                    syncAssociationRules(initialRun, request.getRules());
+                } else if (request.getModelType() == ModelType.CUSTOMER_CLUSTERING) {
+                    syncCustomerClustering(initialRun, request.getClusterRecommendations(), request.getCustomerAssignments());
+                } else if (request.getModelType() == ModelType.CONTENT_BASED) {
+                    syncContentBased(initialRun, request.getContentRecommendations());
+                }
 
-            // Deactivate older active models of the same type
-            modelRunRepository.deactivateExistingModels(request.getModelType());
+                // Deactivate older active models of the same type
+                modelRunRepository.deactivateExistingModels(request.getModelType());
 
-            // Mark this run as SUCCESS and ACTIVE
-            modelRun.setRunStatus(RunStatus.SUCCESS);
-            modelRun.setIsActive(1);
-            modelRun.setFinishedAt(Instant.now());
-            modelRun = modelRunRepository.save(modelRun);
+                // Mark this run as SUCCESS and ACTIVE
+                initialRun.setRunStatus(RunStatus.SUCCESS);
+                initialRun.setIsActive(1);
+                initialRun.setFinishedAt(Instant.now());
+                savedRunRef.set(modelRunRepository.save(initialRun));
+            });
 
-            log.info("Model sync completed successfully. RunId: {}, Type: {}", modelRun.getId(), modelRun.getModelType());
-            return mapToModelRunDto(modelRun);
+            MiningModelRun completedRun = savedRunRef.get();
+            log.info("Model sync completed successfully. RunId: {}, Type: {}", completedRun.getId(), completedRun.getModelType());
+            return mapToModelRunDto(completedRun);
 
         } catch (Exception e) {
             log.error("Model sync failed for RunId: {}", modelRun.getId(), e);
             modelRun.setRunStatus(RunStatus.FAILED);
+            modelRun.setIsActive(0);
             modelRun.setFinishedAt(Instant.now());
-            modelRun.setNotes("Sync failed: " + e.getMessage());
+            String failNote = "Sync failed: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            modelRun.setNotes(failNote.length() > 500 ? failNote.substring(0, 500) : failNote);
             modelRunRepository.save(modelRun);
+            if (e instanceof BadRequestException bre) {
+                throw bre;
+            }
+            if (e instanceof ResourceNotFoundException rnf) {
+                throw rnf;
+            }
             throw new RuntimeException("Lỗi đồng bộ mô hình khai phá dữ liệu: " + e.getMessage(), e);
         }
+    }
+
+    private void executeInTransaction(Runnable action) {
+        if (transactionManager == null) {
+            action.run();
+            return;
+        }
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.executeWithoutResult(status -> action.run());
     }
 
     private void syncAssociationRules(MiningModelRun modelRun, List<SyncMiningPayloadRequest.RulePayload> rulePayloads) {
@@ -119,15 +151,28 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
         List<AssociationRule> rulesToSave = new ArrayList<>();
 
         for (SyncMiningPayloadRequest.RulePayload rp : rulePayloads) {
+            if (rp.getSupport() == null || rp.getSupport() <= 0
+                    || rp.getConfidence() == null || rp.getConfidence() <= 0 || rp.getConfidence() > 1.0001
+                    || rp.getLift() == null || rp.getLift() <= 0) {
+                throw new BadRequestException("Chỉ số luật kết hợp không hợp lệ (yêu cầu support > 0, 0 < confidence <= 1, lift > 0).");
+            }
+            if (rp.getAntecedentProductIds() == null || rp.getAntecedentProductIds().isEmpty()
+                    || rp.getConsequentProductIds() == null || rp.getConsequentProductIds().isEmpty()) {
+                throw new BadRequestException("Luật kết hợp phải có cả vế điều kiện và vế hệ quả.");
+            }
+
+            Set<Long> antecedentIds = new LinkedHashSet<>(rp.getAntecedentProductIds());
+            Set<Long> consequentIds = new LinkedHashSet<>(rp.getConsequentProductIds());
+
             AssociationRule rule = AssociationRule.builder()
                     .ruleCode(rp.getRuleCode())
-                    .antecedentCount(rp.getAntecedentCount() != null ? rp.getAntecedentCount() : 1)
-                    .consequentCount(rp.getConsequentCount() != null ? rp.getConsequentCount() : 1)
+                    .antecedentCount(rp.getAntecedentCount() != null ? rp.getAntecedentCount() : antecedentIds.size())
+                    .consequentCount(rp.getConsequentCount() != null ? rp.getConsequentCount() : consequentIds.size())
                     .antecedentsSummary(rp.getAntecedentsSummary())
                     .consequentsSummary(rp.getConsequentsSummary())
-                    .support(rp.getSupport() != null ? rp.getSupport() : 0.0)
-                    .confidence(rp.getConfidence() != null ? rp.getConfidence() : 0.0)
-                    .lift(rp.getLift() != null ? rp.getLift() : 0.0)
+                    .support(rp.getSupport())
+                    .confidence(rp.getConfidence())
+                    .lift(rp.getLift())
                     .leverage(rp.getLeverage())
                     .conviction(rp.getConviction())
                     .transactionCount(rp.getTransactionCount() != null ? rp.getTransactionCount() : 0)
@@ -136,29 +181,25 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
                     .items(new ArrayList<>())
                     .build();
 
-            if (rp.getAntecedentProductIds() != null) {
-                for (Long pId : rp.getAntecedentProductIds()) {
-                    Product p = productMap.get(pId);
-                    if (p != null) {
-                        rule.getItems().add(AssociationRuleItem.builder()
-                                .rule(rule)
-                                .product(p)
-                                .itemType(RuleItemType.ANTECEDENT)
-                                .build());
-                    }
+            for (Long pId : antecedentIds) {
+                Product p = productMap.get(pId);
+                if (p != null) {
+                    rule.getItems().add(AssociationRuleItem.builder()
+                            .rule(rule)
+                            .product(p)
+                            .itemType(RuleItemType.ANTECEDENT)
+                            .build());
                 }
             }
 
-            if (rp.getConsequentProductIds() != null) {
-                for (Long pId : rp.getConsequentProductIds()) {
-                    Product p = productMap.get(pId);
-                    if (p != null) {
-                        rule.getItems().add(AssociationRuleItem.builder()
-                                .rule(rule)
-                                .product(p)
-                                .itemType(RuleItemType.CONSEQUENT)
-                                .build());
-                    }
+            for (Long pId : consequentIds) {
+                Product p = productMap.get(pId);
+                if (p != null) {
+                    rule.getItems().add(AssociationRuleItem.builder()
+                            .rule(rule)
+                            .product(p)
+                            .itemType(RuleItemType.CONSEQUENT)
+                            .build());
                 }
             }
 
@@ -373,7 +414,7 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
     @Transactional(readOnly = true)
     public ModelVersionSummaryDto getModelDetails(Long modelRunId) {
         MiningModelRun run = modelRunRepository.findById(modelRunId)
-                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy phiên bản mô hình với ID: " + modelRunId));
+                .orElseThrow(() -> new ResourceNotFoundException("Phiên bản mô hình", "id", modelRunId));
         return mapToSummaryDto(run);
     }
 
@@ -381,7 +422,7 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
     @Transactional
     public ModelVersionSummaryDto activateModelVersion(Long modelRunId) {
         MiningModelRun target = modelRunRepository.findById(modelRunId)
-                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy phiên bản mô hình với ID: " + modelRunId));
+                .orElseThrow(() -> new ResourceNotFoundException("Phiên bản mô hình", "id", modelRunId));
 
         if (target.getRunStatus() != RunStatus.SUCCESS) {
             throw new IllegalStateException("Chỉ có thể kích hoạt phiên bản có trạng thái huấn luyện thành công (SUCCESS)!");
@@ -402,12 +443,12 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
     @Transactional(readOnly = true)
     public ModelComparisonResponse compareModelVersions(Long sourceId, Long targetId) {
         MiningModelRun source = modelRunRepository.findById(sourceId)
-                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy phiên bản gốc với ID: " + sourceId));
+                .orElseThrow(() -> new ResourceNotFoundException("Phiên bản mô hình gốc", "id", sourceId));
         MiningModelRun target = modelRunRepository.findById(targetId)
-                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy phiên bản đối chiếu với ID: " + targetId));
+                .orElseThrow(() -> new ResourceNotFoundException("Phiên bản mô hình đối chiếu", "id", targetId));
 
         if (source.getModelType() != target.getModelType()) {
-            throw new IllegalArgumentException("Chỉ có thể so sánh giữa hai phiên bản của cùng một loại mô hình (" + source.getModelType() + " vs " + target.getModelType() + ")!");
+            throw new BadRequestException("Chỉ có thể so sánh giữa hai phiên bản của cùng một loại mô hình (" + source.getModelType() + " vs " + target.getModelType() + ")!");
         }
 
         ModelVersionSummaryDto sourceDto = mapToSummaryDto(source);
@@ -599,7 +640,7 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
     private Map<String, Object> parseJsonToMap(String json) {
         if (json == null || json.isBlank()) return Collections.emptyMap();
         try {
-            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+            return OBJECT_MAPPER.readValue(json, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             log.warn("Failed to parse JSON string to Map: {}", e.getMessage());
             return Collections.emptyMap();
@@ -628,7 +669,7 @@ public class DataMiningSyncServiceImpl implements DataMiningSyncService {
     private String toJsonString(Object obj) {
         if (obj == null) return null;
         try {
-            return objectMapper.writeValueAsString(obj);
+            return OBJECT_MAPPER.writeValueAsString(obj);
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize object to JSON string: {}", e.getMessage());
             return null;

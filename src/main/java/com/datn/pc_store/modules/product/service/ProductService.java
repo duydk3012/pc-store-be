@@ -215,8 +215,12 @@ public class ProductService {
                 Map<Long, Product> found = productRepository.findAllById(itemProductIds).stream()
                         .collect(Collectors.toMap(Product::getId, p -> p));
                 for (Long pid : itemProductIds) {
-                    if (!found.containsKey(pid)) {
+                    Product comp = found.get(pid);
+                    if (comp == null) {
                         throw new ResourceNotFoundException("Linh kiện", "id", pid);
+                    }
+                    if (comp.getProductType() == ProductType.PC) {
+                        throw new BadRequestException("Không thể thêm sản phẩm loại PC (ID: " + pid + ") làm linh kiện bên trong cấu hình PC khác.");
                     }
                 }
             }

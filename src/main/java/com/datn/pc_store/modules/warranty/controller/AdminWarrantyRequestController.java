@@ -55,17 +55,26 @@ public class AdminWarrantyRequestController {
         return ResponseEntity.ok(service.updateTechnicalHandling(id, req));
     }
 
-    public record AddPartInput(Long productId, Integer quantity, Long unitCost) {}
+    public record AddPartInput(
+            @jakarta.validation.constraints.NotNull(message = "ID sản phẩm linh kiện không được để trống")
+            @jakarta.validation.constraints.Positive(message = "ID sản phẩm linh kiện phải lớn hơn 0")
+            Long productId,
+            @jakarta.validation.constraints.NotNull(message = "Số lượng không được để trống")
+            @jakarta.validation.constraints.Positive(message = "Số lượng phải lớn hơn 0")
+            Integer quantity,
+            @jakarta.validation.constraints.PositiveOrZero(message = "Đơn giá không được âm")
+            Long unitCost
+    ) {}
 
     @PostMapping("/{id}/parts")
     @Operation(summary = "Thêm linh kiện thay thế vào phiếu bảo hành")
     public ResponseEntity<AdminWarrantyRequestResponse> addPart(
             @PathVariable Long id,
-            @RequestBody AddPartInput input) {
+            @Valid @RequestBody AddPartInput input) {
         return ResponseEntity.ok(service.addPartToRequest(
                 id,
-                input.productId() != null ? input.productId() : 1L,
-                input.quantity() != null ? input.quantity() : 1,
+                input.productId(),
+                input.quantity(),
                 input.unitCost() != null ? input.unitCost() : 0L
         ));
     }

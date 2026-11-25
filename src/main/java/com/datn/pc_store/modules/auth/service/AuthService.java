@@ -32,24 +32,30 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
-        if (userRepository.existsByUsername(req.username())) {
+        String username = req.username().trim();
+        String email = req.email().trim();
+        if (userRepository.existsByUsername(username)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Username đã tồn tại!"
             );
         }
-        if (userRepository.existsByEmail(req.email())) {
+        if (userRepository.existsByEmail(email) || userRepository.findByEmailIgnoreCase(email).isPresent()) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Email đã tồn tại!"
             );
         }
 
+        String fullName = (req.fullName() != null && !req.fullName().isBlank())
+                ? req.fullName().trim()
+                : username;
+
         User user = userRepository.save(User.builder()
-                .username(req.username())
+                .username(username)
                 .passwordHash(passwordEncoder.encode(req.password()))
-                .fullName(req.fullName())
-                .email(req.email())
+                .fullName(fullName)
+                .email(email)
                 .phoneNumber(req.phoneNumber())
                 .address(req.address())
                 .role(RoleType.CUSTOMER)

@@ -24,6 +24,11 @@ import java.util.Locale;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class WarrantyPolicyService {
+    private static final java.util.Set<String> SORTABLE_FIELDS = java.util.Set.of(
+            "id", "name", "durationDays", "targetType", "targetId", "status",
+            "createdDate", "createdBy", "lastModifiedDate", "lastModifiedBy"
+    );
+
     private final WarrantyPolicyRepository repository;
     private final WarrantyPolicyMapper mapper;
     private final CategoryRepository categoryRepository;
@@ -32,6 +37,11 @@ public class WarrantyPolicyService {
 
     public PageResponse<WarrantyPolicyResponse> getAllPolicies(String keyword, WarrantyPolicyStatus status,
             WarrantyPolicyTargetType targetType, Long targetId, Pageable pageable) {
+        for (var order : pageable.getSort()) {
+            if (!SORTABLE_FIELDS.contains(order.getProperty())) {
+                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + order.getProperty());
+            }
+        }
         return PageResponse.of(repository.findAll((root, query, cb) -> {
             var predicates = new ArrayList<Predicate>();
             if (keyword != null && !keyword.isBlank()) {

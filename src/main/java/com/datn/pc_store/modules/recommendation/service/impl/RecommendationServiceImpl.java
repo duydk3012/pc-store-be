@@ -1,7 +1,9 @@
 package com.datn.pc_store.modules.recommendation.service.impl;
 
+import com.datn.pc_store.common.exception.ResourceNotFoundException;
 import com.datn.pc_store.modules.order.repository.OrderItemRepository;
 import com.datn.pc_store.modules.product.entity.Product;
+import com.datn.pc_store.modules.product.enums.ProductStatus;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
 import com.datn.pc_store.modules.recommendation.dto.response.PersonalizedRecommendationResponse;
 import com.datn.pc_store.modules.recommendation.dto.response.ProductRecommendationDto;
@@ -51,8 +53,7 @@ public class RecommendationServiceImpl implements RecommendationService {
     @Transactional(readOnly = true)
     public List<ProductRecommendationDto> getFrequentlyBoughtTogether(Long productId, int limit) {
         int finalLimit = sanitizeLimit(limit, 1, 10, 4);
-        Product currentProduct = productRepo.findById(productId)
-                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy sản phẩm với ID: " + productId));
+        findActiveProductOrThrow(productId);
 
         Set<Long> candidateIds = new LinkedHashSet<>();
         Map<Long, Double> liftScoreMap = new HashMap<>();
@@ -91,6 +92,10 @@ public class RecommendationServiceImpl implements RecommendationService {
             }
         }
 
+        if (candidateIds.isEmpty()) {
+            return List.of();
+        }
+
         // BATCH QUERY DUY NHẤT: Kiểm tra tồn kho cho toàn bộ ứng viên (Loại bỏ N+1 Query)
         List<Product> availableProducts = productRepo.findAvailableInStockProductsByIds(candidateIds);
         Map<Long, Product> productMap = availableProducts.stream().collect(Collectors.toMap(Product::getId, p -> p));
@@ -114,8 +119,7 @@ public class RecommendationServiceImpl implements RecommendationService {
     @Transactional(readOnly = true)
     public List<ProductRecommendationDto> getSimilarProducts(Long productId, int limit) {
         int finalLimit = sanitizeLimit(limit, 1, 10, 4);
-        Product currentProduct = productRepo.findById(productId)
-                .orElseThrow(() -> new NoSuchElementException("Không tìm thấy sản phẩm với ID: " + productId));
+        Product currentProduct = findActiveProductOrThrow(productId);
 
         Set<Long> candidateIds = new LinkedHashSet<>();
         Map<Long, Double> simScoreMap = new HashMap<>();
@@ -149,6 +153,10 @@ public class RecommendationServiceImpl implements RecommendationService {
             for (Long id : brandIds) {
                 if (candidateIds.add(id)) simScoreMap.put(id, 0.50);
             }
+        }
+
+        if (candidateIds.isEmpty()) {
+            return List.of();
         }
 
         // BATCH QUERY TỒN KHO DUY NHẤT
@@ -235,6 +243,12 @@ public class RecommendationServiceImpl implements RecommendationService {
             }
         }
 
+        if (candidateIds.isEmpty()) {
+            response.setProducts(List.of());
+            if (response.getIsFallback() == null) response.setIsFallback(false);
+            return response;
+        }
+
         // BATCH QUERY TỒN KHO DUY NHẤT
         List<Product> availableProducts = productRepo.findAvailableInStockProductsByIds(candidateIds);
         Map<Long, Product> productMap = availableProducts.stream().collect(Collectors.toMap(Product::getId, p -> p));
@@ -255,6 +269,15 @@ public class RecommendationServiceImpl implements RecommendationService {
         response.setProducts(productDtos);
         if (response.getIsFallback() == null) response.setIsFallback(false);
         return response;
+    }
+
+    private Product findActiveProductOrThrow(Long productId) {
+        Product product = productRepo.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm", "id", productId));
+        if (product.getStatus() == ProductStatus.INACTIVE) {
+            throw new ResourceNotFoundException("Sản phẩm", "id", productId);
+        }
+        return product;
     }
 
     private ProductRecommendationDto mapToDto(Product p, String reason, Double score, boolean inStock, boolean isFallback) {

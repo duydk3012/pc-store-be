@@ -74,4 +74,18 @@ public final class AnalyticsDateHelper {
 
         return new Instant[]{fromTime, toTime};
     }
+
+    public static Instant[] resolveMonthRange(int year, int month) {
+        if (month < 1 || month > 12) {
+            throw new BadRequestException("Tháng phải nằm trong khoảng từ 1 đến 12.");
+        }
+        YearMonth ym = YearMonth.of(year, month);
+        LocalDate start = ym.atDay(1);
+        LocalDate end = ym.atEndOfMonth();
+
+        Instant fromTime = start.atStartOfDay(VN_ZONE).toInstant();
+        Instant toTime = end.atTime(LocalTime.MAX).atZone(VN_ZONE).toInstant();
+
+        return new Instant[]{fromTime, toTime};
+    }
 }
