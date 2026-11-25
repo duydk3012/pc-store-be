@@ -7,7 +7,7 @@ import com.datn.pc_store.modules.category.repository.CategoryRepository;
 import com.datn.pc_store.modules.brand.repository.BrandRepository;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
 import com.datn.pc_store.modules.warranty.dto.*;
-import com.datn.pc_store.modules.warranty.entity.WarrantPolicy;
+import com.datn.pc_store.modules.warranty.entity.WarrantyPolicy;
 import com.datn.pc_store.modules.warranty.enums.WarrantyPolicyStatus;
 import com.datn.pc_store.modules.warranty.enums.WarrantyPolicyTargetType;
 import com.datn.pc_store.modules.warranty.mapper.WarrantyPolicyMapper;
@@ -54,7 +54,7 @@ public class WarrantyPolicyService {
     @Transactional
     public WarrantyPolicyResponse createPolicy(WarrantyPolicyCreateRequest req) {
         validateTarget(req.getTargetType(), req.getTargetId());
-        WarrantPolicy policy = mapper.toEntity(req);
+        WarrantyPolicy policy = mapper.toEntity(req);
         policy.setName(req.getName().trim());
         if (req.getStatus() == null) policy.setStatus(WarrantyPolicyStatus.ACTIVE);
         return mapper.toResponse(repository.save(policy));
@@ -62,7 +62,7 @@ public class WarrantyPolicyService {
 
     @Transactional
     public WarrantyPolicyResponse updatePolicy(Long id, WarrantyPolicyUpdateRequest req) {
-        WarrantPolicy policy = findPolicy(id);
+        WarrantyPolicy policy = findPolicy(id);
         validateTarget(req.getTargetType(), req.getTargetId());
         mapper.updateEntityFromDto(req, policy);
         policy.setName(req.getName().trim());
@@ -75,7 +75,7 @@ public class WarrantyPolicyService {
 
     @Transactional
     public WarrantyPolicyResponse updateStatus(Long id, WarrantyPolicyStatus status) {
-        WarrantPolicy policy = findPolicy(id);
+        WarrantyPolicy policy = findPolicy(id);
         policy.setStatus(status);
         return mapper.toResponse(repository.save(policy));
     }
@@ -85,7 +85,7 @@ public class WarrantyPolicyService {
         repository.delete(findPolicy(id));
     }
 
-    private WarrantPolicy findPolicy(Long id) {
+    private WarrantyPolicy findPolicy(Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Chính sách bảo hành", "id", id));
     }

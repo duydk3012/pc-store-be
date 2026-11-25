@@ -18,7 +18,7 @@ import org.hibernate.annotations.SQLRestriction;
 @Builder
 @SQLDelete(sql = "UPDATE warranty_policy SET is_deleted = 1 WHERE id = ?")
 @SQLRestriction("is_deleted = 0")
-public class WarrantPolicy extends BaseEntity {
+public class WarrantyPolicy extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
