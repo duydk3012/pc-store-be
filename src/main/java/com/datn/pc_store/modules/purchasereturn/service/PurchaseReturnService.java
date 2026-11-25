@@ -179,7 +179,11 @@ public class PurchaseReturnService {
 
         for (ProductSerial serial : serials) {
             long unitCost = getSerialUnitCost(serial);
-            totalAmount += unitCost;
+            try {
+                totalAmount = Math.addExact(totalAmount, unitCost);
+            } catch (ArithmeticException ex) {
+                throw new BadRequestException("Tổng tiền hoàn trả vượt giới hạn cho phép.");
+            }
 
             PurchaseReturnItem item = PurchaseReturnItem.builder()
                     .purchaseReturn(pr)
@@ -193,7 +197,8 @@ public class PurchaseReturnService {
 
             if (targetStatus == PurchaseReturnStatus.PENDING) {
                 serial.setStatus(ProductSerialStatus.PENDING_RETURN);
-            }        }
+            }
+        }
 
         pr.setTotalAmount(totalAmount);
         pr.setItems(items);
@@ -230,6 +235,17 @@ public class PurchaseReturnService {
                 pr.getSupplierId(),
                 id
         );
+        if (serials.isEmpty()) {
+            throw new BadRequestException("Phiếu hoàn trả phải có ít nhất một serial sản phẩm.");
+        }
+
+        // Giải phóng các serial cũ đang giữ PENDING_RETURN trước khi thay thế danh sách mới
+        for (PurchaseReturnItem oldItem : pr.getItems()) {
+            ProductSerial oldPs = oldItem.getProductSerial();
+            if (oldPs != null && oldPs.getStatus() == ProductSerialStatus.PENDING_RETURN) {
+                oldPs.setStatus(ProductSerialStatus.DEFECTIVE);
+            }
+        }
 
         pr.setCode(code);
         pr.setName(req.getName());
@@ -244,8 +260,13 @@ public class PurchaseReturnService {
         List<PurchaseReturnItem> items = new ArrayList<>();
         for (ProductSerial serial : serials) {
             long unitCost = getSerialUnitCost(serial);
-            totalAmount += unitCost;
+            try {
+                totalAmount = Math.addExact(totalAmount, unitCost);
+            } catch (ArithmeticException ex) {
+                throw new BadRequestException("Tổng tiền hoàn trả vượt giới hạn cho phép.");
+            }
 
+            serial.setStatus(ProductSerialStatus.PENDING_RETURN);
             PurchaseReturnItem item = PurchaseReturnItem.builder()
                     .purchaseReturn(pr)
                     .productSerial(serial)
@@ -337,6 +358,9 @@ public class PurchaseReturnService {
                 }
             }
             case CANCELLED -> {
+                if (!isAdmin && !isManager && (createdBy == null || !createdBy.equals(currentUserId))) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản lý hoặc người tạo mới có quyền hủy phiếu hoàn trả.");
+                }
                 for (PurchaseReturnItem item : pr.getItems()) {
                     ProductSerial ps = item.getProductSerial();
                     if (ps != null) {
@@ -346,6 +370,9 @@ public class PurchaseReturnService {
                 }
             }
             case RETURNED -> {
+                if (!isAdmin && !isManager && (createdBy == null || !createdBy.equals(currentUserId))) {
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản lý hoặc người tạo mới có quyền chuyển phiếu sang trạng thái đã hoàn về kho.");
+                }
                 for (PurchaseReturnItem item : pr.getItems()) {
                     ProductSerial ps = item.getProductSerial();
                     if (ps != null) {
@@ -410,7 +437,7 @@ public class PurchaseReturnService {
         List<ProductSerial> serials = purchaseReturnRepository.findAvailableSerialsForReturn(
                 supplierId,
                 ELIGIBLE_SERIAL_STATUSES,
-                List.of(PurchaseReturnStatus.CANCELLED),
+                List.of(PurchaseReturnStatus.CANCELLED, PurchaseReturnStatus.RETURNED),
                 null,
                 productId,
                 keyword
@@ -460,7 +487,7 @@ public class PurchaseReturnService {
 
         Set<Long> inUse = purchaseReturnItemRepository.findSerialIdsInActiveReturns(
                 List.of(ps.getId()),
-                List.of(PurchaseReturnStatus.CANCELLED),
+                List.of(PurchaseReturnStatus.CANCELLED, PurchaseReturnStatus.RETURNED),
                 null
         );
         if (!inUse.isEmpty()) {
@@ -522,9 +549,29 @@ public class PurchaseReturnService {
 
         Set<Long> alreadyInActive = purchaseReturnItemRepository.findSerialIdsInActiveReturns(
                 allSerialIds,
-                List.of(PurchaseReturnStatus.CANCELLED),
+                List.of(PurchaseReturnStatus.CANCELLED, PurchaseReturnStatus.RETURNED),
                 excludeReturnId
         );
+
+        Set<Long> poIds = serialList.stream()
+                .map(ProductSerial::getReceiptItem)
+                .filter(Objects::nonNull)
+                .map(ReceiptItem::getGoodsReceipt)
+                .filter(Objects::nonNull)
+                .map(GoodsReceipt::getPurchaseOrderId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, PurchaseOrder> poMap = poIds.isEmpty() ? Map.of()
+                : purchaseOrderRepository.findAllById(poIds).stream()
+                        .collect(Collectors.toMap(PurchaseOrder::getId, p -> p));
+
+        Set<Long> mismatchSupIds = poMap.values().stream()
+                .map(PurchaseOrder::getSupplierId)
+                .filter(sid -> sid != null && !sid.equals(supplierId))
+                .collect(Collectors.toSet());
+        Map<Long, Supplier> supMap = mismatchSupIds.isEmpty() ? Map.of()
+                : supplierRepository.findAllById(mismatchSupIds).stream()
+                        .collect(Collectors.toMap(Supplier::getId, s -> s));
 
         for (ProductSerial ps : serialList) {
             if (ps.isTerminated()) {
@@ -546,11 +593,13 @@ public class PurchaseReturnService {
             }
 
             GoodsReceipt gr = ri.getGoodsReceipt();
-            PurchaseOrder po = purchaseOrderRepository.findById(gr.getPurchaseOrderId())
-                    .orElseThrow(() -> new BadRequestException("Không tìm thấy đơn nhập hàng gốc của serial '" + ps.getSerialNumber() + "'."));
+            PurchaseOrder po = poMap.get(gr.getPurchaseOrderId());
+            if (po == null) {
+                throw new BadRequestException("Không tìm thấy đơn nhập hàng gốc của serial '" + ps.getSerialNumber() + "'.");
+            }
 
             if (!po.getSupplierId().equals(supplierId)) {
-                Supplier actualSup = supplierRepository.findById(po.getSupplierId()).orElse(null);
+                Supplier actualSup = supMap.get(po.getSupplierId());
                 String actualName = actualSup != null ? actualSup.getName() : "ID " + po.getSupplierId();
                 throw new BadRequestException("Serial '" + ps.getSerialNumber() + "' thuộc Nhà cung cấp '" + actualName
                         + "', không khớp với Nhà cung cấp của phiếu hoàn.");

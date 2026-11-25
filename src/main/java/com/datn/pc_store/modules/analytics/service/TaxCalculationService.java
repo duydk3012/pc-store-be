@@ -1,6 +1,7 @@
 package com.datn.pc_store.modules.analytics.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
+import com.datn.pc_store.common.exception.BadRequestException;
 import com.datn.pc_store.modules.analytics.dto.request.TaxReportFilterRequest;
 import com.datn.pc_store.modules.analytics.dto.response.*;
 import com.datn.pc_store.modules.analytics.enums.TaxTierBracket;
@@ -10,6 +11,7 @@ import com.datn.pc_store.modules.order.enums.InvoiceStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,11 @@ public class TaxCalculationService {
                 : LocalDate.now(AnalyticsDateHelper.VN_ZONE).getYear();
 
         Integer quarter = filter != null ? filter.getQuarter() : null;
+        Integer month = filter != null ? filter.getMonth() : null;
+
+        if (quarter != null && month != null) {
+            throw new BadRequestException("Chỉ chọn lọc theo Quý hoặc theo Tháng, không chọn đồng thời cả hai.");
+        }
 
         // 1. Luôn xác định tổng doanh thu cả năm để tìm bậc thuế suất luỹ tiến áp dụng
         Instant[] yearRange = AnalyticsDateHelper.resolveYearRange(year);
@@ -46,15 +53,17 @@ public class TaxCalculationService {
 
         TaxTierBracket tier = TaxTierBracket.determineTier(annualRevenue);
 
-        // 2. Doanh thu tính thuế của kỳ được chọn (cả năm hoặc theo quý)
+        // 2. Doanh thu tính thuế của kỳ được chọn (cả năm, theo quý hoặc theo tháng)
         long periodRevenue = annualRevenue;
         long periodInvoices = annualInvoices;
-        if (quarter != null && quarter >= 1 && quarter <= 4) {
-            Instant[] qRange = AnalyticsDateHelper.resolveQuarterRange(year, quarter);
-            List<Object[]> qStats = taxRepository.queryRevenueAndCountBetween(qRange[0], qRange[1]);
-            if (!qStats.isEmpty() && qStats.get(0) != null) {
-                periodRevenue = ((Number) qStats.get(0)[0]).longValue();
-                periodInvoices = ((Number) qStats.get(0)[1]).longValue();
+        if (quarter != null || month != null) {
+            Instant[] periodRange = quarter != null
+                    ? AnalyticsDateHelper.resolveQuarterRange(year, quarter)
+                    : AnalyticsDateHelper.resolveMonthRange(year, month);
+            List<Object[]> periodStats = taxRepository.queryRevenueAndCountBetween(periodRange[0], periodRange[1]);
+            if (!periodStats.isEmpty() && periodStats.get(0) != null) {
+                periodRevenue = ((Number) periodStats.get(0)[0]).longValue();
+                periodInvoices = ((Number) periodStats.get(0)[1]).longValue();
             } else {
                 periodRevenue = 0L;
                 periodInvoices = 0L;
@@ -93,7 +102,7 @@ public class TaxCalculationService {
 
         TaxTierBracket tier = TaxTierBracket.determineTier(annualRevenue);
 
-        List<Object[]> rows = taxRepository.queryQuarterlyRevenueByYear(year);
+        List<Object[]> rows = taxRepository.queryQuarterlyRevenueBetween(yearRange[0], yearRange[1]);
         Map<Integer, long[]> qData = new HashMap<>();
         for (Object[] r : rows) {
             int q = r[0] != null ? ((Number) r[0]).intValue() : 0;
@@ -135,9 +144,20 @@ public class TaxCalculationService {
                 ? filter.getYear()
                 : LocalDate.now(AnalyticsDateHelper.VN_ZONE).getYear();
 
-        Instant[] range = (filter != null && filter.getQuarter() != null)
-                ? AnalyticsDateHelper.resolveQuarterRange(year, filter.getQuarter())
-                : AnalyticsDateHelper.resolveYearRange(year);
+        Integer quarter = filter != null ? filter.getQuarter() : null;
+        Integer month = filter != null ? filter.getMonth() : null;
+        if (quarter != null && month != null) {
+            throw new BadRequestException("Chỉ chọn lọc theo Quý hoặc theo Tháng, không chọn đồng thời cả hai.");
+        }
+
+        Instant[] range;
+        if (quarter != null) {
+            range = AnalyticsDateHelper.resolveQuarterRange(year, quarter);
+        } else if (month != null) {
+            range = AnalyticsDateHelper.resolveMonthRange(year, month);
+        } else {
+            range = AnalyticsDateHelper.resolveYearRange(year);
+        }
 
         // Xác định bậc thuế suất áp dụng
         Instant[] yearRange = AnalyticsDateHelper.resolveYearRange(year);
@@ -147,7 +167,8 @@ public class TaxCalculationService {
         TaxTierBracket tier = TaxTierBracket.determineTier(annualRevenue);
 
         long totalElements = taxRepository.countTaxInvoicesBetween(range[0], range[1]);
-        List<Object[]> rows = taxRepository.queryTaxInvoicesPaged(range[0], range[1], pageable);
+        Pageable nativePageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+        List<Object[]> rows = taxRepository.queryTaxInvoicesPaged(range[0], range[1], nativePageable);
 
         List<TaxInvoiceDetailDto> dtos = new ArrayList<>();
         for (Object[] r : rows) {

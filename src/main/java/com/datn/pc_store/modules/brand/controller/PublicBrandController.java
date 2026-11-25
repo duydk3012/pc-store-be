@@ -44,21 +44,21 @@ public class PublicBrandController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Xem chi tiết thương hiệu theo ID",
-               description = "Lấy chi tiết thương hiệu theo ID.")
+               description = "Lấy chi tiết thương hiệu đang hoạt động theo ID.")
     public ResponseEntity<BrandResponse> getBrandById(
             @Parameter(description = "ID thương hiệu")
             @PathVariable Long id
     ) {
-        return ResponseEntity.ok(brandService.getBrandById(id));
+        return ResponseEntity.ok(brandService.getBrandById(id, true));
     }
 
     @GetMapping("/by-slug/{slug}")
     @Operation(summary = "Xem chi tiết thương hiệu theo Slug",
-               description = "Lấy chi tiết thương hiệu theo Slug đường dẫn.")
+               description = "Lấy chi tiết thương hiệu đang hoạt động theo Slug đường dẫn.")
     public ResponseEntity<BrandResponse> getBrandBySlug(
             @Parameter(description = "Slug thương hiệu")
             @PathVariable String slug
     ) {
-        return ResponseEntity.ok(brandService.getBrandBySlug(slug));
+        return ResponseEntity.ok(brandService.getBrandBySlug(slug, true));
     }
 }

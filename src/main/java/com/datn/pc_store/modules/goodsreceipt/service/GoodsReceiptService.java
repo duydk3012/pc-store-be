@@ -439,7 +439,9 @@ public class GoodsReceiptService {
                 }
 
                 if (target == GoodsReceiptStatus.CONFIRMED) {
-                    validateReadyForConfirm(receipt);
+                    // Khóa bi quan PurchaseOrder để chống race condition cập nhật vượt quantityOrder
+                    PurchaseOrder lockedPo = lockPurchaseOrderForConfirm(receipt.getPurchaseOrderId());
+                    validateReadyForConfirm(receipt, lockedPo);
                     // Serial GOOD_CONDITION -> IN_STOCK, DEFECTIVE -> PENDING_RETURN
                     for (ReceiptItem item : receipt.getItems()) {
                         for (ProductSerial serial : item.getProductSerials()) {
@@ -454,7 +456,7 @@ public class GoodsReceiptService {
                         receipt.setReceivedAt(Instant.now());
                     }
                     receipt.setReceivedBy(currentUserId);
-                    updatePurchaseOrderReceivedQuantities(receipt);
+                    updatePurchaseOrderReceivedQuantities(receipt, lockedPo);
                 } else {
                     // REJECTED
                     terminateAllSerials(receipt);
@@ -749,9 +751,20 @@ public class GoodsReceiptService {
         }
     }
 
-    private void validateReadyForConfirm(GoodsReceipt receipt) {
+    private PurchaseOrder lockPurchaseOrderForConfirm(Long purchaseOrderId) {
+        PurchaseOrder po = purchaseOrderRepository.findForUpdate(purchaseOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Đơn đặt hàng (Purchase Order)", "id", purchaseOrderId));
+        if (po.isDeleted()) {
+            throw new BadRequestException("Đơn đặt hàng đã bị xóa.");
+        }
+        if (po.getStatus() != PurchaseOrderStatus.APPROVED) {
+            throw conflict("Chỉ được xác nhận phiếu nhập cho đơn đặt hàng đã duyệt (APPROVED). Trạng thái hiện tại: " + po.getStatus());
+        }
+        return po;
+    }
+
+    private void validateReadyForConfirm(GoodsReceipt receipt, PurchaseOrder po) {
         validateItemsForPending(receipt.getItems());
-        PurchaseOrder po = validateAndGetPurchaseOrder(receipt.getPurchaseOrderId());
 
         Map<Long, PurchaseOrderItem> poItemMap = po.getItems().stream()
                 .collect(Collectors.toMap(PurchaseOrderItem::getId, i -> i));
@@ -769,10 +782,7 @@ public class GoodsReceiptService {
         }
     }
 
-    private void updatePurchaseOrderReceivedQuantities(GoodsReceipt receipt) {
-        PurchaseOrder po = purchaseOrderRepository.findById(receipt.getPurchaseOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException("Đơn đặt hàng", "id", receipt.getPurchaseOrderId()));
-
+    private void updatePurchaseOrderReceivedQuantities(GoodsReceipt receipt, PurchaseOrder po) {
         Map<Long, PurchaseOrderItem> poItemMap = po.getItems().stream()
                 .collect(Collectors.toMap(PurchaseOrderItem::getId, i -> i));
 

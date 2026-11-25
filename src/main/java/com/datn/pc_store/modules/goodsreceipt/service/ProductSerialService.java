@@ -79,10 +79,18 @@ public class ProductSerialService {
         return PageResponse.of(page.map(goodsReceiptMapper::toSerialResponse));
     }
 
+    private static final Set<ProductSerialStatus> WAREHOUSE_EDITABLE_STATUSES = Set.of(
+            ProductSerialStatus.GOOD_CONDITION,
+            ProductSerialStatus.DEFECTIVE,
+            ProductSerialStatus.IN_STOCK,
+            ProductSerialStatus.PENDING_RETURN
+    );
+
     @Transactional
     public ProductSerialResponse updateStatus(Long id, ProductSerialStatus newStatus) {
         ProductSerial ps = productSerialRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Serial sản phẩm", "id", id));
+        validateManualStatusChange(ps, newStatus);
         ps.setStatus(newStatus);
         ProductSerial saved = productSerialRepository.save(ps);
         return goodsReceiptMapper.toSerialResponse(saved);
@@ -93,11 +101,32 @@ public class ProductSerialService {
         if (serialNumbers == null || serialNumbers.isEmpty()) {
             return List.of();
         }
-        List<ProductSerial> serials = productSerialRepository.findAllBySerialNumberIn(serialNumbers);
+        Set<String> cleanNumbers = serialNumbers.stream()
+                .filter(s -> s != null && !s.isBlank())
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.toSet());
+        if (cleanNumbers.isEmpty()) {
+            return List.of();
+        }
+        List<ProductSerial> serials = productSerialRepository.lockActiveBySerialNumbers(cleanNumbers);
         for (ProductSerial ps : serials) {
+            validateManualStatusChange(ps, newStatus);
             ps.setStatus(newStatus);
         }
         List<ProductSerial> saved = productSerialRepository.saveAll(serials);
         return saved.stream().map(goodsReceiptMapper::toSerialResponse).toList();
+    }
+
+    private void validateManualStatusChange(ProductSerial ps, ProductSerialStatus newStatus) {
+        if (ps.isTerminated()) {
+            throw new BadRequestException("Serial '" + ps.getSerialNumber() + "' đã kết thúc, không thể thay đổi trạng thái.");
+        }
+        if (!WAREHOUSE_EDITABLE_STATUSES.contains(ps.getStatus())) {
+            throw new BadRequestException("Serial '" + ps.getSerialNumber() + "' đang thuộc quy trình "
+                    + ps.getStatus() + ", không thể cập nhật thủ công.");
+        }
+        if (!WAREHOUSE_EDITABLE_STATUSES.contains(newStatus)) {
+            throw new BadRequestException("Không thể chuyển thủ công serial sang trạng thái quy trình: " + newStatus);
+        }
     }
 }

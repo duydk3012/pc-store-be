@@ -80,7 +80,7 @@ public interface AnalyticsInventoryRepository extends JpaRepository<ProductSeria
             p.code AS productCode,
             p.name AS productName,
             COALESCE((SELECT c.name FROM categories c JOIN category_products cp ON c.id = cp.category_id WHERE cp.product_id = p.id LIMIT 1), 'Chưa phân loại') AS categoryName,
-            COUNT(ps.id) AS sellableQuantity,
+            COUNT(DISTINCT ps.id) AS sellableQuantity,
             s.name AS supplierName
         FROM products p
         LEFT JOIN product_serials ps ON p.id = ps.product_id AND ps.status IN (0, 2) AND ps.is_terminated = 0
@@ -89,7 +89,7 @@ public interface AnalyticsInventoryRepository extends JpaRepository<ProductSeria
         LEFT JOIN suppliers s ON po.supplier_id = s.id
         WHERE p.is_deleted = 0
         GROUP BY p.id, p.code, p.name, s.name
-        HAVING COUNT(ps.id) <= :threshold
+        HAVING COUNT(DISTINCT ps.id) <= :threshold
         ORDER BY sellableQuantity ASC
         LIMIT 50
         """, nativeQuery = true)
@@ -102,11 +102,12 @@ public interface AnalyticsInventoryRepository extends JpaRepository<ProductSeria
             p.name AS productName,
             COALESCE((SELECT c.name FROM categories c JOIN category_products cp ON c.id = cp.category_id WHERE cp.product_id = p.id LIMIT 1), 'Chưa phân loại') AS categoryName,
             COUNT(DISTINCT ps.id) AS sellableQuantity,
-            MAX(oi.created_date) AS lastSoldDate,
-            COALESCE(DATEDIFF(NOW(), MAX(oi.created_date)), 999) AS daysWithoutSale
+            MAX(o.created_date) AS lastSoldDate,
+            COALESCE(DATEDIFF(NOW(), MAX(o.created_date)), DATEDIFF(NOW(), MIN(ps.created_date)), 0) AS daysWithoutSale
         FROM products p
         JOIN product_serials ps ON p.id = ps.product_id AND ps.status IN (0, 2) AND ps.is_terminated = 0
         LEFT JOIN order_items oi ON p.id = oi.product_id
+        LEFT JOIN orders o ON oi.order_id = o.id AND o.status = 4
         WHERE p.is_deleted = 0
         GROUP BY p.id, p.code, p.name
         HAVING daysWithoutSale >= :thresholdDays

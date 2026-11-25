@@ -36,14 +36,26 @@ public class TaxExcelExportService {
     public byte[] exportTaxReportToExcel(TaxReportFilterRequest filter) {
         int year = (filter != null && filter.getYear() != null)
                 ? filter.getYear()
-                : java.time.LocalDate.now().getYear();
+                : java.time.LocalDate.now(AnalyticsDateHelper.VN_ZONE).getYear();
+
+        Integer quarter = filter != null ? filter.getQuarter() : null;
+        Integer month = filter != null ? filter.getMonth() : null;
+        if (quarter != null && month != null) {
+            throw new com.datn.pc_store.common.exception.BadRequestException(
+                    "Chỉ chọn lọc theo Quý hoặc theo Tháng, không chọn đồng thời cả hai.");
+        }
 
         TaxSummaryResponse summary = taxCalculationService.calculateTaxSummary(filter);
         TaxQuarterlyResponse quarterly = taxCalculationService.getTaxQuarterlyBreakdown(year);
 
-        Instant[] range = (filter != null && filter.getQuarter() != null)
-                ? AnalyticsDateHelper.resolveQuarterRange(year, filter.getQuarter())
-                : AnalyticsDateHelper.resolveYearRange(year);
+        Instant[] range;
+        if (quarter != null) {
+            range = AnalyticsDateHelper.resolveQuarterRange(year, quarter);
+        } else if (month != null) {
+            range = AnalyticsDateHelper.resolveMonthRange(year, month);
+        } else {
+            range = AnalyticsDateHelper.resolveYearRange(year);
+        }
         List<Object[]> invoiceRows = taxRepository.queryAllTaxInvoicesForExport(range[0], range[1]);
 
         try (SXSSFWorkbook workbook = new SXSSFWorkbook(100);
@@ -75,9 +87,14 @@ public class TaxExcelExportService {
 
             Row rowSub = sheet1.createRow(rowIdx++);
             Cell cellSub = rowSub.createCell(0);
-            String periodName = (filter != null && filter.getQuarter() != null)
-                    ? "QUÝ " + filter.getQuarter() + " NĂM " + year
-                    : "NĂM TÀI CHÍNH " + year;
+            String periodName;
+            if (quarter != null) {
+                periodName = "QUÝ " + quarter + " NĂM " + year;
+            } else if (month != null) {
+                periodName = "THÁNG " + month + " NĂM " + year;
+            } else {
+                periodName = "NĂM TÀI CHÍNH " + year;
+            }
             cellSub.setCellValue("BẢNG HOẠCH TOÁN NGHĨA VỤ THUẾ DOANH THU - " + periodName);
             cellSub.setCellStyle(subTitleStyle);
             sheet1.addMergedRegion(new CellRangeAddress(1, 1, 0, 5));
@@ -280,8 +297,20 @@ public class TaxExcelExportService {
 
     private void createCell(Row row, int col, String value, CellStyle style) {
         Cell cell = row.createCell(col);
-        cell.setCellValue(value != null ? value : "");
+        cell.setCellValue(sanitizeSpreadsheetFormula(value));
         if (style != null) cell.setCellStyle(style);
+    }
+
+    /** Ngăn Excel Formula Injection khi chuỗi xuất ra bắt đầu bằng =, +, -, @, tab hoặc CR. */
+    private static String sanitizeSpreadsheetFormula(String value) {
+        if (value == null) return "";
+        if (!value.isEmpty()) {
+            char first = value.charAt(0);
+            if (first == '=' || first == '+' || first == '-' || first == '@' || first == '\t' || first == '\r') {
+                return "'" + value;
+            }
+        }
+        return value;
     }
 
     private void createNumericCell(Row row, int col, long value, CellStyle style) {

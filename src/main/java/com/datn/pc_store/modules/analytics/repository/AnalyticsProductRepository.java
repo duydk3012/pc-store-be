@@ -83,10 +83,11 @@ public interface AnalyticsProductRepository extends JpaRepository<Product, Long>
             p.name AS productName,
             COALESCE((SELECT c.name FROM categories c JOIN category_products cp ON c.id = cp.category_id WHERE cp.product_id = p.id LIMIT 1), 'Chưa phân loại') AS categoryName,
             COALESCE((SELECT b.name FROM brands b WHERE b.id = p.brand_id), 'Chưa rõ') AS brandName,
-            COALESCE(SUM(oi.quantity), 0) AS qtySold,
-            COALESCE(SUM(oi.subtotal), 0) AS revenue,
-            COALESCE(SUM(cogs_table.cost), 0) AS cogs,
-            (COALESCE(SUM(oi.subtotal), 0) - COALESCE(SUM(cogs_table.cost), 0)) AS grossProfit,
+            COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN oi.quantity ELSE 0 END), 0) AS qtySold,
+            COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN oi.subtotal ELSE 0 END), 0) AS revenue,
+            COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN cogs_table.cost ELSE 0 END), 0) AS cogs,
+            (COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN oi.subtotal ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN cogs_table.cost ELSE 0 END), 0)) AS grossProfit,
             (
                 SELECT COUNT(ps.id)
                 FROM product_serials ps

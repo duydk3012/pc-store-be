@@ -60,4 +60,12 @@ public class CustomUserDetails implements UserDetails {
     public boolean isAccountNonLocked() {
         return user.getStatus() != UserStatus.BANNED;
     }
+
+    /**
+     * INACTIVE -> DisabledException khi đăng nhập và chặn ở JwtAuthFilter
+     */
+    @Override
+    public boolean isEnabled() {
+        return user.getStatus() == UserStatus.ACTIVE;
+    }
 }

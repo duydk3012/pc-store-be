@@ -76,6 +76,15 @@ public class OrderSerialService {
         }
     }
 
+    public void verifyAllAssigned(Long orderId) {
+        var links = assignments.findAllByOrderId(orderId);
+        for (var item : orderItems.findAllByOrderId(orderId)) {
+            if (links.stream().filter(link -> link.getOrderItemId().equals(item.getId())).count() != item.getQuantity()) {
+                throw new BadRequestException("Dòng hàng " + item.getId() + " chưa có đủ serial để giao hàng hoặc hoàn tất đơn.");
+            }
+        }
+    }
+
     public void markDelivering(Long orderId) {
         for (var link : assignments.findAllByOrderId(orderId)) {
             link.getProductSerial().setStatus(ProductSerialStatus.DELIVERING);
@@ -95,6 +104,14 @@ public class OrderSerialService {
     }
 
     public void release(Long orderId) {
+        releaseInternal(orderId, false);
+    }
+
+    public void releaseIncludingSold(Long orderId) {
+        releaseInternal(orderId, true);
+    }
+
+    private void releaseInternal(Long orderId, boolean includeSold) {
         for (var link : assignments.findAllByOrderId(orderId)) {
             var serial = link.getProductSerial();
             if (serial.getStatus() == ProductSerialStatus.PACKING

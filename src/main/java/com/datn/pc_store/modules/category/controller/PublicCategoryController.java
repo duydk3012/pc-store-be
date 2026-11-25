@@ -47,21 +47,21 @@ public class PublicCategoryController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Xem chi tiết danh mục theo ID",
-               description = "Lấy chi tiết danh mục theo ID.")
+               description = "Lấy chi tiết danh mục đang hoạt động theo ID.")
     public ResponseEntity<CategoryResponse> getCategoryById(
             @Parameter(description = "ID danh mục")
             @PathVariable Long id
     ) {
-        return ResponseEntity.ok(categoryService.getCategoryById(id));
+        return ResponseEntity.ok(categoryService.getCategoryById(id, true));
     }
 
     @GetMapping("/by-slug/{slug}")
     @Operation(summary = "Xem chi tiết danh mục theo Slug",
-               description = "Lấy chi tiết danh mục theo Slug đường dẫn.")
+               description = "Lấy chi tiết danh mục đang hoạt động theo Slug đường dẫn.")
     public ResponseEntity<CategoryResponse> getCategoryBySlug(
             @Parameter(description = "Slug danh mục")
             @PathVariable String slug
     ) {
-        return ResponseEntity.ok(categoryService.getCategoryBySlug(slug));
+        return ResponseEntity.ok(categoryService.getCategoryBySlug(slug, true));
     }
 }

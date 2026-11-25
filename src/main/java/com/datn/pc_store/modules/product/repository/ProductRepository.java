@@ -59,4 +59,70 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             @Param("publicOnly") boolean publicOnly,
             Pageable pageable
     );
+
+    @Query("""
+        SELECT DISTINCT p FROM Product p
+        JOIN com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial ps ON ps.productId = p.id
+        WHERE p.id IN :productIds
+          AND p.status = com.datn.pc_store.modules.product.enums.ProductStatus.ACTIVE
+          AND ps.status = com.datn.pc_store.modules.goodsreceipt.enums.ProductSerialStatus.IN_STOCK
+          AND ps.isTerminated = false
+    """)
+    java.util.List<Product> findAvailableInStockProductsByIds(@Param("productIds") java.util.Collection<Long> productIds);
+
+    @Query("""
+        SELECT p.id FROM Product p
+        WHERE p.productType = com.datn.pc_store.modules.product.enums.ProductType.OTHER
+          AND p.status = com.datn.pc_store.modules.product.enums.ProductStatus.ACTIVE
+          AND p.id <> :productId
+        ORDER BY p.id ASC
+    """)
+    java.util.List<Long> findCompatibleAccessoryIds(@Param("productId") Long productId, Pageable pageable);
+
+    @Query("""
+        SELECT p.id FROM Product p
+        WHERE p.productType = com.datn.pc_store.modules.product.enums.ProductType.OTHER
+          AND p.status = com.datn.pc_store.modules.product.enums.ProductStatus.ACTIVE
+        ORDER BY p.id DESC
+    """)
+    java.util.List<Long> findTopSellingAccessoryIds(Pageable pageable);
+
+    @Query("""
+        SELECT p.id FROM Product p
+        WHERE p.id <> :currentProductId
+          AND p.status = com.datn.pc_store.modules.product.enums.ProductStatus.ACTIVE
+          AND EXISTS (
+              SELECT 1 FROM ProductCategory pc1
+              JOIN ProductCategory pc2 ON pc1.categoryId = pc2.categoryId
+              WHERE pc1.productId = :currentProductId
+                AND pc2.productId = p.id
+          )
+          AND (:minPrice IS NULL OR p.price >= :minPrice)
+          AND (:maxPrice IS NULL OR p.price <= :maxPrice)
+        ORDER BY p.price ASC
+    """)
+    java.util.List<Long> findIdsByCategoryAndPriceRange(
+            @Param("currentProductId") Long currentProductId,
+            @Param("minPrice") Long minPrice,
+            @Param("maxPrice") Long maxPrice,
+            Pageable pageable);
+
+    @Query("""
+        SELECT p.id FROM Product p
+        WHERE p.brandId = :brandId
+          AND p.id <> :currentProductId
+          AND p.status = com.datn.pc_store.modules.product.enums.ProductStatus.ACTIVE
+        ORDER BY p.id DESC
+    """)
+    java.util.List<Long> findTopSellingLaptopIdsByBrand(
+            @Param("brandId") Long brandId,
+            @Param("currentProductId") Long currentProductId,
+            Pageable pageable);
+
+    @Query("""
+        SELECT p.id FROM Product p
+        WHERE p.status = com.datn.pc_store.modules.product.enums.ProductStatus.ACTIVE
+        ORDER BY p.id ASC
+    """)
+    java.util.List<Long> findGlobalTopSellingIds(Pageable pageable);
 }
