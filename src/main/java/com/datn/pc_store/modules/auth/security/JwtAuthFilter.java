@@ -28,16 +28,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        if (header != null &&  header.startsWith("Bearer ")
+        if (header != null && header.startsWith("Bearer ")
             && SecurityContextHolder.getContext().getAuthentication() == null) {
             String token = header.substring(7);
-            if (jwtService.isValid(token)) {
+            jwtService.parseClaimsIfValid(token).ifPresent(claims -> {
+                String username = claims.getSubject();
+                if (username == null || username.isBlank()) {
+                    return;
+                }
                 try {
-                    UserDetails ud = userDetailsService
-                            .loadUserByUsername(jwtService.extractUsername(token));
+                    UserDetails ud = userDetailsService.loadUserByUsername(username);
                     if (ud instanceof CustomUserDetails cud
                         && cud.isEnabled() && cud.isAccountNonLocked()
-                        && cud.getTokenVersion() == jwtService.extractTokenVersion(token)) {
+                        && cud.getTokenVersion() == jwtService.extractTokenVersion(claims)) {
                         var auth = new UsernamePasswordAuthenticationToken(
                                 cud, null, cud.getAuthorities()
                         );
@@ -47,7 +50,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 } catch (UsernameNotFoundException ignored) {
                     // user đã bị xóa -> coi như chưa đăng nhập
                 }
-            }
+            });
         }
         chain.doFilter(request, response);
     }

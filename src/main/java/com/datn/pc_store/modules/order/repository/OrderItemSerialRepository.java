@@ -17,6 +17,9 @@ public interface OrderItemSerialRepository extends JpaRepository<OrderItemSerial
     @Query("SELECT ois FROM OrderItemSerial ois JOIN OrderItem oi ON oi.id = ois.orderItemId WHERE oi.order.id = :orderId")
     List<OrderItemSerial> findAllByOrderId(@Param("orderId") Long orderId);
 
+    @Query("SELECT oi.order.id, ois FROM OrderItemSerial ois JOIN OrderItem oi ON oi.id = ois.orderItemId WHERE oi.order.id IN :orderIds")
+    List<Object[]> findAllWithOrderIdByOrderIdIn(@Param("orderIds") java.util.Collection<Long> orderIds);
+
     void deleteAllByOrderItemId(Long orderItemId);
 
     boolean existsByProductSerialId(Long productSerialId);

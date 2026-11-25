@@ -78,6 +78,12 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         SELECT p.id FROM Product p
         WHERE p.id <> :currentProductId
           AND p.status = com.datn.pc_store.modules.product.enums.ProductStatus.ACTIVE
+          AND EXISTS (
+              SELECT 1 FROM ProductCategory pc1
+              JOIN ProductCategory pc2 ON pc1.categoryId = pc2.categoryId
+              WHERE pc1.productId = :currentProductId
+                AND pc2.productId = p.id
+          )
           AND (:minPrice IS NULL OR p.price >= :minPrice)
           AND (:maxPrice IS NULL OR p.price <= :maxPrice)
         ORDER BY p.price ASC

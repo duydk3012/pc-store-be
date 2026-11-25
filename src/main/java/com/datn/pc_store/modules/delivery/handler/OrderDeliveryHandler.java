@@ -13,6 +13,10 @@ import com.datn.pc_store.modules.warranty.service.WarrantyActivationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+
 @Component
 @RequiredArgsConstructor
 public class OrderDeliveryHandler implements DeliveryResourceHandler {
@@ -32,6 +36,7 @@ public class OrderDeliveryHandler implements DeliveryResourceHandler {
         if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.DELIVERING) {
             throw new BadRequestException("Chỉ có thể lập vận đơn cho đơn hàng CONFIRMED hoặc DELIVERING.");
         }
+        orderSerialService.verifyAllAssigned(resourceId);
         order.setStatus(OrderStatus.DELIVERING);
         orderSerialService.markDelivering(resourceId);
     }
@@ -39,6 +44,18 @@ public class OrderDeliveryHandler implements DeliveryResourceHandler {
     @Override
     public String getResourceCode(Long resourceId) {
         return orderRepository.findById(resourceId).map(Order::getCode).orElse(null);
+    }
+
+    @Override
+    public Map<Long, String> getResourceCodes(Collection<Long> resourceIds) {
+        if (resourceIds == null || resourceIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> codes = new HashMap<>();
+        for (Order order : orderRepository.findAllById(resourceIds)) {
+            codes.put(order.getId(), order.getCode());
+        }
+        return codes;
     }
 
     @Override

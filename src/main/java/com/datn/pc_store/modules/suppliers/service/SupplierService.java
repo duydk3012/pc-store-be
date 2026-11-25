@@ -1,6 +1,7 @@
 package com.datn.pc_store.modules.suppliers.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
+import com.datn.pc_store.common.exception.BadRequestException;
 import com.datn.pc_store.common.exception.DuplicateResourceException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
 import com.datn.pc_store.modules.suppliers.dto.SupplierCreateRequest;
@@ -22,11 +23,21 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SupplierService {
 
+    private static final java.util.Set<String> SORTABLE_FIELDS = java.util.Set.of(
+            "id", "code", "name", "email", "phoneNumber", "taxCode", "status",
+            "createdDate", "createdBy", "lastModifiedDate", "lastModifiedBy"
+    );
+
     private final SupplierRepository supplierRepository;
     private final SupplierMapper supplierMapper;
 
     @Transactional(readOnly = true)
     public PageResponse<SupplierResponse> getAllSuppliers(String keyword, SupplierStatus status, Pageable pageable) {
+        for (var order : pageable.getSort()) {
+            if (!SORTABLE_FIELDS.contains(order.getProperty())) {
+                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + order.getProperty());
+            }
+        }
         log.info("Lấy danh sách nhà cung cấp với keyword: '{}', status: '{}', pageable: {}", keyword, status, pageable);
         Page<Supplier> page = supplierRepository.searchSuppliers(keyword, status, pageable);
         return PageResponse.of(page.map(supplierMapper::toResponse));

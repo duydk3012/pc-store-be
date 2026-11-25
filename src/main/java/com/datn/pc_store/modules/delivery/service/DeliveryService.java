@@ -25,7 +25,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -111,7 +114,22 @@ public class DeliveryService {
             return cb.and(predicates.toArray(Predicate[]::new));
         };
 
-        Page<DeliveryResponse> result = deliveryRepository.findAll(spec, pageable).map(this::toResponse);
+        Page<Delivery> deliveryPage = deliveryRepository.findAll(spec, pageable);
+        Map<DeliveryResourceType, Map<Long, String>> resourceCodesByType = new EnumMap<>(DeliveryResourceType.class);
+        deliveryPage.getContent().stream()
+                .collect(Collectors.groupingBy(
+                        Delivery::getResourceType,
+                        () -> new EnumMap<>(DeliveryResourceType.class),
+                        Collectors.mapping(Delivery::getResourceId, Collectors.toSet())))
+                .forEach((type, ids) -> resourceCodesByType.put(type, handlerFactory.get(type).getResourceCodes(ids)));
+
+        Page<DeliveryResponse> result = deliveryPage.map(delivery -> {
+            Map<Long, String> codes = resourceCodesByType.get(delivery.getResourceType());
+            String resourceCode = codes != null
+                    ? codes.get(delivery.getResourceId())
+                    : handlerFactory.get(delivery.getResourceType()).getResourceCode(delivery.getResourceId());
+            return toResponse(delivery, resourceCode);
+        });
         return PageResponse.of(result);
     }
 
@@ -168,11 +186,16 @@ public class DeliveryService {
     }
 
     private DeliveryResponse toResponse(Delivery delivery) {
+        String resourceCode = handlerFactory.get(delivery.getResourceType()).getResourceCode(delivery.getResourceId());
+        return toResponse(delivery, resourceCode);
+    }
+
+    private DeliveryResponse toResponse(Delivery delivery, String resourceCode) {
         return DeliveryResponse.builder()
                 .id(delivery.getId())
                 .resourceType(delivery.getResourceType())
                 .resourceId(delivery.getResourceId())
-                .resourceCode(handlerFactory.get(delivery.getResourceType()).getResourceCode(delivery.getResourceId()))
+                .resourceCode(resourceCode)
                 .trackingCode(delivery.getTrackingCode())
                 .carrierName(delivery.getCarrierName())
                 .shippingFee(delivery.getShippingFee())

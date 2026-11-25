@@ -21,6 +21,8 @@ import com.datn.pc_store.modules.order.repository.OrderRepository;
 import com.datn.pc_store.modules.order.util.OrderAddressHelper;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.product.enums.ProductStatus;
+import com.datn.pc_store.modules.product.enums.ProductType;
+import com.datn.pc_store.modules.product.repository.BuildingPcRepository;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
 import com.datn.pc_store.modules.user.entity.User;
 import com.datn.pc_store.modules.user.enums.UserStatus;
@@ -53,6 +55,7 @@ public class OrderService {
     private final ProductSerialRepository productSerialRepository;
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
+    private final BuildingPcRepository buildingPcRepository;
     private final OrderMapper orderMapper;
     private final OrderSerialService orderSerialService;
     private final com.datn.pc_store.modules.warranty.service.WarrantyActivationService warrantyActivationService;
@@ -86,8 +89,25 @@ public class OrderService {
                 pageable
         );
 
-        List<OrderResponse> content = page.getContent().stream()
-                .map(this::mapOrderWithSerials)
+        List<Order> orders = page.getContent();
+        Map<Long, Map<Long, List<String>>> orderSerialsMap = new HashMap<>();
+        if (!orders.isEmpty()) {
+            List<Long> orderIds = orders.stream().map(Order::getId).toList();
+            for (Object[] row : orderItemSerialRepository.findAllWithOrderIdByOrderIdIn(orderIds)) {
+                Long orderId = (Long) row[0];
+                OrderItemSerial ois = (OrderItemSerial) row[1];
+                ProductSerial ps = ois.getProductSerial();
+                if (ps != null && ps.getSerialNumber() != null) {
+                    orderSerialsMap
+                            .computeIfAbsent(orderId, k -> new HashMap<>())
+                            .computeIfAbsent(ois.getOrderItemId(), k -> new ArrayList<>())
+                            .add(ps.getSerialNumber());
+                }
+            }
+        }
+
+        List<OrderResponse> content = orders.stream()
+                .map(o -> orderMapper.toResponse(o, orderSerialsMap.getOrDefault(o.getId(), Collections.emptyMap())))
                 .toList();
 
         return PageResponse.of(new org.springframework.data.domain.PageImpl<>(
@@ -139,8 +159,14 @@ public class OrderService {
 
         User user = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("Khách hàng", "id", targetUserId));
-        if (user.isDeleted() || user.getStatus() == UserStatus.BANNED) {
-            throw new BadRequestException("Tài khoản khách hàng này đang bị khóa hoặc không hợp lệ.");
+        if (user.isDeleted() || user.getStatus() != UserStatus.ACTIVE) {
+            throw new BadRequestException("Tài khoản khách hàng này đang bị khóa hoặc không hoạt động.");
+        }
+
+        boolean hasAnySerial = req.getItems().stream()
+                .anyMatch(it -> it.getSerialNumbers() != null && !it.getSerialNumbers().isEmpty());
+        if (!isStaffOrAdmin && hasAnySerial) {
+            throw new BadRequestException("Khách hàng không được tự chỉ định mã serial khi đặt hàng.");
         }
 
         // Mã đơn hàng
@@ -154,33 +180,89 @@ public class OrderService {
             code = generateUniqueOrderCode();
         }
 
-        // Xử lý các dòng sản phẩm
+        // Batch-load sản phẩm và kiểm tra tồn kho khả dụng theo từng productId
+        Set<Long> requestedProductIds = req.getItems().stream()
+                .map(OrderItemRequest::getProductId)
+                .collect(Collectors.toSet());
+        Map<Long, Product> productMap = productRepository.findAllById(requestedProductIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+
+        Map<Long, Integer> requiredQtyByProduct = new HashMap<>();
+        for (OrderItemRequest itemReq : req.getItems()) {
+            Product product = productMap.get(itemReq.getProductId());
+            if (product == null) {
+                throw new ResourceNotFoundException("Sản phẩm", "id", itemReq.getProductId());
+            }
+            if (product.isDeleted() || product.getStatus() == ProductStatus.INACTIVE) {
+                throw new BadRequestException("Sản phẩm '" + product.getName() + "' (ID: "
+                        + product.getId() + ") đang tạm ngưng kinh doanh.");
+            }
+            if (product.getStatus() == ProductStatus.OUT_OF_STOCK) {
+                throw new BadRequestException("Sản phẩm '" + product.getName() + "' (ID: "
+                        + product.getId() + ") hiện đã hết hàng.");
+            }
+            int qty = itemReq.getQuantity() != null && itemReq.getQuantity() > 0 ? itemReq.getQuantity() : 1;
+            if (product.getProductType() == ProductType.PC) {
+                var components = buildingPcRepository.findByPcId(product.getId());
+                for (var comp : components) {
+                    int compNeed = Math.multiplyExact(comp.getQuantity(), qty);
+                    requiredQtyByProduct.merge(comp.getProductId(), compNeed, Math::addExact);
+                }
+            } else {
+                requiredQtyByProduct.merge(product.getId(), qty, Math::addExact);
+            }
+        }
+
+        for (Map.Entry<Long, Integer> entry : requiredQtyByProduct.entrySet()) {
+            long availableInStock = productSerialRepository.countByProductIdAndStatusAndIsTerminatedFalse(
+                    entry.getKey(), ProductSerialStatus.IN_STOCK);
+            if (availableInStock < entry.getValue()) {
+                Product p = productMap.get(entry.getKey());
+                String name = p != null ? p.getName() : ("ID " + entry.getKey());
+                throw new BadRequestException("Sản phẩm '" + name + "' không đủ tồn kho khả dụng (còn "
+                        + availableInStock + ", yêu cầu " + entry.getValue() + ").");
+            }
+        }
+
+        // Xử lý các dòng sản phẩm — tuyệt đối không tin tưởng đơn giá/giảm giá từ phía khách hàng
         List<OrderItem> orderItems = new ArrayList<>();
         long runningTotal = 0L;
         long totalItemDiscounts = 0L;
 
         for (OrderItemRequest itemReq : req.getItems()) {
-            Product product = productRepository.findById(itemReq.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm", "id", itemReq.getProductId()));
-
-            if (product.isDeleted() || product.getStatus() == ProductStatus.INACTIVE) {
-                throw new BadRequestException("Sản phẩm '" + product.getName() + "' (ID: "
-                        + product.getId() + ") đang tạm ngưng kinh doanh.");
+            Product product = productMap.get(itemReq.getProductId());
+            Long catalogPrice = product.getPrice();
+            long unitPrice;
+            if (isStaffOrAdmin && itemReq.getUnitPrice() != null && itemReq.getUnitPrice() > 0) {
+                unitPrice = itemReq.getUnitPrice();
+            } else {
+                if (catalogPrice == null || catalogPrice <= 0) {
+                    throw new BadRequestException("Sản phẩm '" + product.getName() + "' chưa được thiết lập giá bán hợp lệ.");
+                }
+                unitPrice = catalogPrice;
             }
 
-            long unitPrice = (itemReq.getUnitPrice() != null && itemReq.getUnitPrice() > 0)
-                    ? itemReq.getUnitPrice()
-                    : (product.getPrice() != null ? product.getPrice() : 0L);
-
             int quantity = itemReq.getQuantity() != null && itemReq.getQuantity() > 0 ? itemReq.getQuantity() : 1;
-            long itemDiscount = (itemReq.getDiscountAmount() != null && itemReq.getDiscountAmount() > 0)
-                    ? itemReq.getDiscountAmount()
-                    : 0L;
+            long lineGross;
+            try {
+                lineGross = Math.multiplyExact(unitPrice, (long) quantity);
+            } catch (ArithmeticException ex) {
+                throw new BadRequestException("Thành tiền dòng sản phẩm vượt giới hạn cho phép.");
+            }
 
-            long itemSubtotal = Math.max(0, (unitPrice * quantity) - itemDiscount);
+            long itemDiscount = 0L;
+            if (isStaffOrAdmin && itemReq.getDiscountAmount() != null && itemReq.getDiscountAmount() > 0) {
+                itemDiscount = itemReq.getDiscountAmount();
+                if (itemDiscount > lineGross) {
+                    throw new BadRequestException("Giảm giá dòng sản phẩm không được lớn hơn thành tiền.");
+                }
+            }
+
+            long itemSubtotal = lineGross - itemDiscount;
 
             OrderItem orderItem = OrderItem.builder()
                     .productId(product.getId())
+                    .product(product)
                     .quantity(quantity)
                     .unitPrice(unitPrice)
                     .discountAmount(itemDiscount)
@@ -188,15 +270,24 @@ public class OrderService {
                     .build();
 
             orderItems.add(orderItem);
-            runningTotal += (unitPrice * quantity);
-            totalItemDiscounts += itemDiscount;
+            try {
+                runningTotal = Math.addExact(runningTotal, lineGross);
+                totalItemDiscounts = Math.addExact(totalItemDiscounts, itemDiscount);
+            } catch (ArithmeticException ex) {
+                throw new BadRequestException("Tổng tiền đơn hàng vượt giới hạn cho phép.");
+            }
         }
 
-        long orderLevelDiscount = (req.getDiscountAmount() != null && req.getDiscountAmount() > 0)
-                ? req.getDiscountAmount()
-                : 0L;
+        long orderLevelDiscount = 0L;
+        if (isStaffOrAdmin && req.getDiscountAmount() != null && req.getDiscountAmount() > 0) {
+            orderLevelDiscount = req.getDiscountAmount();
+        }
+        long afterItemDiscount = runningTotal - totalItemDiscounts;
+        if (orderLevelDiscount > afterItemDiscount) {
+            throw new BadRequestException("Giảm giá đơn hàng không được vượt quá giá trị còn lại của đơn.");
+        }
         long finalDiscountAmount = totalItemDiscounts + orderLevelDiscount;
-        long finalAmount = Math.max(0, runningTotal - finalDiscountAmount);
+        long finalAmount = runningTotal - finalDiscountAmount;
 
         // Lưu thông tin người nhận & ghi chú qua OrderAddressHelper
         String encodedAddress = OrderAddressHelper.encodeAddress(
@@ -211,6 +302,7 @@ public class OrderService {
         Order order = Order.builder()
                 .code(code)
                 .userId(targetUserId)
+                .user(user)
                 .type(orderType)
                 .totalAmount(runningTotal)
                 .discountAmount(finalDiscountAmount)
@@ -224,8 +316,8 @@ public class OrderService {
             order.getItems().add(oi);
         }
 
-        Order saved = orderRepository.save(order);
-        if (req.getItems() != null && req.getItems().stream().anyMatch(it -> it.getSerialNumbers() != null && !it.getSerialNumbers().isEmpty())) {
+        Order saved = orderRepository.saveAndFlush(order);
+        if (hasAnySerial) {
             orderSerialService.reserve(saved, req.getItems());
         }
         log.info("Đã tạo đơn hàng mới id={}, code={}, userId={}, finalAmount={}",
@@ -263,12 +355,16 @@ public class OrderService {
             }
         }
 
-        if (newStatus == OrderStatus.COMPLETED
-                && (currentStatus == OrderStatus.PENDING || currentStatus == OrderStatus.CONFIRMED
-                    || currentStatus == OrderStatus.DELIVERING)) {
-            if (deliveryService.existsForResource(DeliveryResourceType.ORDER, id)) {
-                throw new BadRequestException("Đơn đã có vận đơn; hãy cập nhật vận đơn sang DELIVERED để hoàn tất.");
-            }
+        if (currentStatus == OrderStatus.DELIVERING
+                && (newStatus == OrderStatus.COMPLETED || newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.RETURNED)
+                && deliveryService.existsForResource(DeliveryResourceType.ORDER, id)) {
+            throw new BadRequestException("Đơn đang có vận đơn; hãy cập nhật trạng thái vận đơn để hoàn tất hoặc hủy giao.");
+        }
+
+        // Kiểm tra máy trạng thái hợp lệ (throw BadRequestException nếu sai luồng)
+        validateStatusTransition(currentStatus, newStatus, order.getType(), isStaffOrAdmin);
+
+        if (newStatus == OrderStatus.COMPLETED) {
             orderSerialService.markSold(id);
             order.setStatus(OrderStatus.COMPLETED);
             warrantyActivationService.activateForCompletedOrder(order);
@@ -277,25 +373,18 @@ public class OrderService {
             return mapOrderWithSerials(savedOrder);
         }
 
-        if (currentStatus == OrderStatus.DELIVERING
-                && (newStatus == OrderStatus.COMPLETED || newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.RETURNED)) {
-            throw new BadRequestException("Đơn đang giao hàng; hãy cập nhật trạng thái vận đơn để hoàn tất hoặc hủy giao.");
-        }
-
-        // Kiểm tra logic luồng chuyển đổi trạng thái hợp lệ
-        validateStatusTransition(currentStatus, newStatus);
-
         if (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REJECTED || newStatus == OrderStatus.RETURNED) {
-            orderSerialService.release(id);
+            if (currentStatus == OrderStatus.COMPLETED && newStatus == OrderStatus.RETURNED) {
+                orderSerialService.releaseIncludingSold(id);
+            } else {
+                orderSerialService.release(id);
+            }
             invoiceService.cancelInvoiceForOrder(id);
         }
 
         order.setStatus(newStatus);
         Order updated = orderRepository.save(order);
         log.info("Cập nhật trạng thái đơn hàng id={} từ {} sang {}", id, currentStatus, newStatus);
-
-        // ĐẶC BIỆT: CẬP NHẬT TRẠNG THÁI SERIAL THEO QUY TRÌNH BÁN HÀNG
-        handleSerialStatusTransition(id, newStatus);
 
         return mapOrderWithSerials(updated);
     }
@@ -306,35 +395,61 @@ public class OrderService {
      */
     @Transactional
     public OrderResponse assignSerialsToOrder(Long orderId, Map<Long, List<String>> itemSerials) {
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Đơn hàng", "id", orderId));
 
+        if (order.getStatus() != OrderStatus.PENDING
+                && order.getStatus() != OrderStatus.CONFIRMED
+                && order.getStatus() != OrderStatus.DELIVERING) {
+            throw new BadRequestException("Không thể gán serial cho đơn hàng ở trạng thái: " + order.getStatus());
+        }
+        if (deliveryService.existsForResource(DeliveryResourceType.ORDER, orderId)) {
+            throw new BadRequestException("Đơn hàng đã bàn giao vận chuyển, không thể gán lại serial.");
+        }
         if (itemSerials == null || itemSerials.isEmpty()) {
             throw new BadRequestException("Danh sách serial quét gán không được để trống.");
         }
 
-        // Tìm tất cả order items thuộc đơn hàng này
         Map<Long, OrderItem> itemMap = order.getItems().stream()
                 .collect(Collectors.toMap(OrderItem::getId, item -> item));
 
+        // Kiểm tra không trùng serial giữa các dòng trong cùng yêu cầu
+        Set<String> allRequestedSerials = new HashSet<>();
         for (Map.Entry<Long, List<String>> entry : itemSerials.entrySet()) {
             Long orderItemId = entry.getKey();
             List<String> serialNumbers = entry.getValue();
-
             OrderItem item = itemMap.get(orderItemId);
             if (item == null) {
                 throw new BadRequestException("Mặt hàng id=" + orderItemId + " không thuộc đơn hàng " + order.getCode());
             }
-
             if (serialNumbers == null || serialNumbers.isEmpty()) {
                 continue;
             }
+            if (serialNumbers.size() != item.getQuantity()) {
+                throw new BadRequestException("Mặt hàng id=" + orderItemId + " yêu cầu đúng "
+                        + item.getQuantity() + " serial, nhưng nhận được " + serialNumbers.size() + ".");
+            }
+            for (String rawSn : serialNumbers) {
+                String cleanSn = rawSn != null ? rawSn.trim() : "";
+                if (cleanSn.isEmpty()) {
+                    throw new BadRequestException("Mã serial không được để trống.");
+                }
+                if (!allRequestedSerials.add(cleanSn)) {
+                    throw new BadRequestException("Mã serial '" + cleanSn + "' bị trùng lặp trong cùng yêu cầu gán.");
+                }
+            }
+        }
 
-            // Xóa các liên kết serial cũ của item này (nếu có để quét lại) và hoàn trả trạng thái IN_STOCK
+        // Hoàn trả liên kết PACKING cũ của các item được gán lại trước khi khóa serial mới
+        for (Map.Entry<Long, List<String>> entry : itemSerials.entrySet()) {
+            if (entry.getValue() == null || entry.getValue().isEmpty()) {
+                continue;
+            }
+            Long orderItemId = entry.getKey();
             List<OrderItemSerial> existingOis = orderItemSerialRepository.findAllByOrderItemId(orderItemId);
             if (!existingOis.isEmpty()) {
                 List<Long> oldSerialIds = existingOis.stream().map(OrderItemSerial::getProductSerialId).toList();
-                List<ProductSerial> oldSerials = productSerialRepository.findAllByIdIn(oldSerialIds);
+                List<ProductSerial> oldSerials = productSerialRepository.lockByIds(oldSerialIds);
                 for (ProductSerial oldPs : oldSerials) {
                     if (oldPs.getStatus() == ProductSerialStatus.PACKING) {
                         oldPs.setStatus(ProductSerialStatus.IN_STOCK);
@@ -343,34 +458,48 @@ public class OrderService {
                 productSerialRepository.saveAll(oldSerials);
                 orderItemSerialRepository.deleteAll(existingOis);
             }
+        }
+        orderItemSerialRepository.flush();
 
-            // Tìm và kiểm tra các serial trong database
-            List<ProductSerial> serials = productSerialRepository.findAllBySerialNumberIn(serialNumbers);
-            if (serials.size() != serialNumbers.size()) {
-                Set<String> found = serials.stream().map(ProductSerial::getSerialNumber).collect(Collectors.toSet());
-                List<String> missing = serialNumbers.stream().filter(s -> !found.contains(s)).toList();
-                throw new BadRequestException("Các mã serial không tồn tại trong hệ thống: " + String.join(", ", missing));
+        if (!allRequestedSerials.isEmpty()) {
+            Map<String, ProductSerial> lockedSerialMap = new HashMap<>();
+            for (ProductSerial ps : productSerialRepository.lockActiveBySerialNumbers(allRequestedSerials)) {
+                if (lockedSerialMap.put(ps.getSerialNumber(), ps) != null) {
+                    throw new BadRequestException("Có nhiều serial đang hoạt động cùng mã: " + ps.getSerialNumber());
+                }
             }
 
-            for (ProductSerial ps : serials) {
-                if (!ps.getProductId().equals(item.getProductId())) {
-                    throw new BadRequestException("Serial '" + ps.getSerialNumber() + "' không thuộc sản phẩm ID: " + item.getProductId());
+            for (Map.Entry<Long, List<String>> entry : itemSerials.entrySet()) {
+                Long orderItemId = entry.getKey();
+                List<String> serialNumbers = entry.getValue();
+                if (serialNumbers == null || serialNumbers.isEmpty()) {
+                    continue;
                 }
-                if (ps.getStatus() != ProductSerialStatus.IN_STOCK) {
-                    throw new BadRequestException("Serial '" + ps.getSerialNumber() + "' không còn trong kho (trạng thái hiện tại: " + ps.getStatus() + ")");
+                OrderItem item = itemMap.get(orderItemId);
+                List<ProductSerial> toSave = new ArrayList<>();
+                for (String rawSn : serialNumbers) {
+                    String cleanSn = rawSn.trim();
+                    ProductSerial ps = lockedSerialMap.get(cleanSn);
+                    if (ps == null || ps.isTerminated()) {
+                        throw new BadRequestException("Mã serial không tồn tại hoặc đã kết thúc: " + cleanSn);
+                    }
+                    if (!ps.getProductId().equals(item.getProductId())) {
+                        throw new BadRequestException("Serial '" + cleanSn + "' không thuộc sản phẩm ID: " + item.getProductId());
+                    }
+                    if (ps.getStatus() != ProductSerialStatus.IN_STOCK) {
+                        throw new BadRequestException("Serial '" + cleanSn + "' không còn trong kho (trạng thái hiện tại: " + ps.getStatus() + ")");
+                    }
+                    ps.setStatus(ProductSerialStatus.PACKING);
+                    toSave.add(ps);
+                    OrderItemSerial ois = OrderItemSerial.builder()
+                            .orderItemId(orderItemId)
+                            .productSerialId(ps.getId())
+                            .productSerial(ps)
+                            .build();
+                    orderItemSerialRepository.save(ois);
                 }
-
-                // Gán liên kết OrderItemSerial
-                OrderItemSerial ois = OrderItemSerial.builder()
-                        .orderItemId(orderItemId)
-                        .productSerialId(ps.getId())
-                        .build();
-                orderItemSerialRepository.save(ois);
-
-                // Cập nhật trạng thái serial thành PACKING (6 - Đang đóng gói)
-                ps.setStatus(ProductSerialStatus.PACKING);
+                productSerialRepository.saveAll(toSave);
             }
-            productSerialRepository.saveAll(serials);
         }
 
         // Cập nhật trạng thái đơn hàng sang DELIVERING nếu đang ở CONFIRMED hoặc PENDING
@@ -385,56 +514,23 @@ public class OrderService {
 
     /**
      * Giai đoạn 3 Bước 5: Bàn giao cho ĐVVC
-     * Cập nhật trạng thái các mã serial thành DELIVERING (7 - Đang giao)
+     * Cập nhật trạng thái đơn và các mã serial thành DELIVERING (7 - Đang giao)
      */
     @Transactional
     public OrderResponse handoverToCarrier(Long orderId) {
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Đơn hàng", "id", orderId));
 
-        List<OrderItemSerial> serialLinks = orderItemSerialRepository.findAllByOrderId(orderId);
-        if (!serialLinks.isEmpty()) {
-            List<Long> serialIds = serialLinks.stream().map(OrderItemSerial::getProductSerialId).toList();
-            List<ProductSerial> serials = productSerialRepository.findAllByIdIn(serialIds);
-            for (ProductSerial ps : serials) {
-                ps.setStatus(ProductSerialStatus.DELIVERING);
-            }
-            productSerialRepository.saveAll(serials);
-            log.info("Đơn hàng id={} đã bàn giao ĐVVC, chuyển trạng thái {} serials sang DELIVERING", orderId, serials.size());
+        if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.DELIVERING) {
+            throw new BadRequestException("Chỉ có thể bàn giao ĐVVC khi đơn ở trạng thái CONFIRMED hoặc DELIVERING.");
         }
+        orderSerialService.verifyAllAssigned(orderId);
+        orderSerialService.markDelivering(orderId);
+        order.setStatus(OrderStatus.DELIVERING);
+        orderRepository.save(order);
+        log.info("Đơn hàng id={} đã bàn giao ĐVVC, trạng thái DELIVERING", orderId);
 
         return mapOrderWithSerials(order);
-    }
-
-    /**
-     * Giai đoạn 4: Hoàn thành đơn hàng & cập nhật trạng thái serial sang SOLD (Đã bán)
-     */
-    private void handleSerialStatusTransition(Long orderId, OrderStatus newStatus) {
-        List<OrderItemSerial> serialLinks = orderItemSerialRepository.findAllByOrderId(orderId);
-        if (serialLinks.isEmpty()) {
-            return;
-        }
-
-        List<Long> serialIds = serialLinks.stream().map(OrderItemSerial::getProductSerialId).toList();
-        List<ProductSerial> serials = productSerialRepository.findAllByIdIn(serialIds);
-
-        if (newStatus == OrderStatus.COMPLETED) {
-            // Cập nhật lại trạng thái serial sau khi đã hoàn thành đơn hàng -> SOLD (8)
-            for (ProductSerial ps : serials) {
-                ps.setStatus(ProductSerialStatus.SOLD);
-            }
-            productSerialRepository.saveAll(serials);
-            log.info("QUY TRÌNH BÁN HÀNG HOÀN TẤT: Đã cập nhật {} serials của đơn hàng id={} sang trạng thái SOLD (Đã bán)",
-                    serials.size(), orderId);
-        } else if (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REJECTED || newStatus == OrderStatus.RETURNED) {
-            // Trả lại kho nếu hủy hoặc hoàn đơn
-            for (ProductSerial ps : serials) {
-                ps.setStatus(ProductSerialStatus.IN_STOCK);
-            }
-            productSerialRepository.saveAll(serials);
-            log.info("Đơn hàng id={} hủy/hoàn: Đã hoàn trả {} serials về trạng thái IN_STOCK (Trong kho)",
-                    serials.size(), orderId);
-        }
     }
 
     @Transactional
@@ -478,29 +574,24 @@ public class OrderService {
         log.info("Đã xóa vĩnh viễn đơn hàng id={}, code={}", id, order.getCode());
     }
 
-    private void validateStatusTransition(OrderStatus from, OrderStatus to) {
-        if (from == OrderStatus.PENDING) {
-            if (to == OrderStatus.CONFIRMED || to == OrderStatus.REJECTED || to == OrderStatus.CANCELLED) {
-                return;
-            }
+    private void validateStatusTransition(OrderStatus from, OrderStatus to, OrderType type, boolean isStaffOrAdmin) {
+        boolean allowed = switch (from) {
+            case PENDING -> to == OrderStatus.CONFIRMED
+                    || to == OrderStatus.REJECTED
+                    || to == OrderStatus.CANCELLED
+                    || (isStaffOrAdmin && type == OrderType.IN_STORE && to == OrderStatus.COMPLETED);
+            case CONFIRMED -> to == OrderStatus.DELIVERING
+                    || to == OrderStatus.CANCELLED
+                    || (isStaffOrAdmin && to == OrderStatus.COMPLETED);
+            case DELIVERING -> to == OrderStatus.COMPLETED
+                    || to == OrderStatus.CANCELLED
+                    || to == OrderStatus.RETURNED;
+            case COMPLETED -> isStaffOrAdmin && to == OrderStatus.RETURNED;
+            case REJECTED, CANCELLED, RETURNED -> false;
+        };
+        if (!allowed) {
+            throw new BadRequestException("Không thể chuyển trạng thái đơn hàng từ " + from + " sang " + to + ".");
         }
-        if (from == OrderStatus.CONFIRMED) {
-            if (to == OrderStatus.DELIVERING || to == OrderStatus.CANCELLED) {
-                return;
-            }
-        }
-        if (from == OrderStatus.DELIVERING) {
-            if (to == OrderStatus.COMPLETED || to == OrderStatus.CANCELLED || to == OrderStatus.RETURNED) {
-                return;
-            }
-        }
-        if (from == OrderStatus.COMPLETED) {
-            if (to == OrderStatus.RETURNED) {
-                return;
-            }
-        }
-
-        log.warn("Chuyển trạng thái đơn hàng không theo chuỗi tiêu chuẩn: {} -> {}", from, to);
     }
 
     private OrderResponse mapOrderWithSerials(Order order) {

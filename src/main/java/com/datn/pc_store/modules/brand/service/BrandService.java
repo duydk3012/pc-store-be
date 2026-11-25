@@ -26,11 +26,20 @@ import java.util.List;
 @RequiredArgsConstructor
 public class BrandService {
 
+    private static final java.util.Set<String> SORTABLE_FIELDS = java.util.Set.of(
+            "id", "name", "slug", "status", "createdDate", "createdBy", "lastModifiedDate", "lastModifiedBy"
+    );
+
     private final BrandRepository brandRepository;
     private final BrandMapper brandMapper;
 
     @Transactional(readOnly = true)
     public PageResponse<BrandResponse> getAllBrands(String keyword, BrandStatus status, Pageable pageable) {
+        for (var order : pageable.getSort()) {
+            if (!SORTABLE_FIELDS.contains(order.getProperty())) {
+                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + order.getProperty());
+            }
+        }
         log.info("Lấy danh sách thương hiệu với keyword: '{}', status: '{}', pageable: {}", keyword, status, pageable);
         Page<Brand> page = brandRepository.searchBrands(keyword, status, pageable);
         return PageResponse.of(page.map(brandMapper::toResponse));
@@ -44,16 +53,28 @@ public class BrandService {
 
     @Transactional(readOnly = true)
     public BrandResponse getBrandById(Long id) {
-        log.info("Lấy thông tin thương hiệu theo id: {}", id);
+        return getBrandById(id, false);
+    }
+
+    @Transactional(readOnly = true)
+    public BrandResponse getBrandById(Long id, boolean publicOnly) {
+        log.info("Lấy thông tin thương hiệu theo id: {}, publicOnly: {}", id, publicOnly);
         Brand brand = brandRepository.findById(id)
+                .filter(b -> !publicOnly || b.getStatus() == BrandStatus.ACTIVE)
                 .orElseThrow(() -> new ResourceNotFoundException("Thương hiệu", "id", id));
         return brandMapper.toResponse(brand);
     }
 
     @Transactional(readOnly = true)
     public BrandResponse getBrandBySlug(String slug) {
-        log.info("Lấy thông tin thương hiệu theo slug: {}", slug);
+        return getBrandBySlug(slug, false);
+    }
+
+    @Transactional(readOnly = true)
+    public BrandResponse getBrandBySlug(String slug, boolean publicOnly) {
+        log.info("Lấy thông tin thương hiệu theo slug: {}, publicOnly: {}", slug, publicOnly);
         Brand brand = brandRepository.findBySlug(slug)
+                .filter(b -> !publicOnly || b.getStatus() == BrandStatus.ACTIVE)
                 .orElseThrow(() -> new ResourceNotFoundException("Thương hiệu", "slug", slug));
         return brandMapper.toResponse(brand);
     }

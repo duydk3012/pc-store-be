@@ -8,7 +8,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -68,7 +67,8 @@ public class ProductSerialController {
     }
 
     @PatchMapping("/{id}/status")
-    @Operation(summary = "Cập nhật trạng thái serial sản phẩm", description = "Cập nhật trạng thái một serial: PACKING, DELIVERING, SOLD, IN_STOCK...")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STAFF_WAREHOUSE')")
+    @Operation(summary = "Cập nhật trạng thái serial sản phẩm", description = "Cập nhật trạng thái kho của một serial (IN_STOCK, DEFECTIVE, GOOD_CONDITION, PENDING_RETURN). Không cho phép ghi đè serial đã bán, đang đóng gói, đang giao hoặc đã kết thúc.")
     public ResponseEntity<ProductSerialResponse> updateStatus(
             @Parameter(description = "ID serial") @PathVariable Long id,
             @Parameter(description = "Trạng thái mới") @RequestParam ProductSerialStatus status
@@ -77,7 +77,8 @@ public class ProductSerialController {
     }
 
     @PatchMapping("/bulk-status")
-    @Operation(summary = "Cập nhật trạng thái hàng loạt serial", description = "Cập nhật danh sách serial number sang trạng thái mới (VD: chuyển sang PACKING khi đóng gói, SOLD khi hoàn thành đơn)")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STAFF_WAREHOUSE')")
+    @Operation(summary = "Cập nhật trạng thái hàng loạt serial", description = "Cập nhật trạng thái kho cho danh sách serial đang hoạt động.")
     public ResponseEntity<List<ProductSerialResponse>> bulkUpdateStatus(
             @RequestBody List<String> serialNumbers,
             @RequestParam ProductSerialStatus status

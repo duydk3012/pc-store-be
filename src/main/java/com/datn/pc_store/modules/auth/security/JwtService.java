@@ -53,12 +53,23 @@ public class JwtService {
     }
 
     public boolean isValid(String token) {
+        return parseClaimsIfValid(token).isPresent();
+    }
+
+    /**
+     * Parse và xác thực chữ ký JWT một lần duy nhất để tránh lặp chi phí HMAC ở JwtAuthFilter.
+     */
+    public java.util.Optional<Claims> parseClaimsIfValid(String token) {
         try {
-            parse(token);
-            return true;
+            return java.util.Optional.of(parse(token));
         } catch (JwtException | IllegalArgumentException e) {
-            return false;
+            return java.util.Optional.empty();
         }
+    }
+
+    public int extractTokenVersion(Claims claims) {
+        Integer tv = claims.get("tv", Integer.class);
+        return tv == null ? -1 : tv;
     }
 
     private Claims parse(String token) {
