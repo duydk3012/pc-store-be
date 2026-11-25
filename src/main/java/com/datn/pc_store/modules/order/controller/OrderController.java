@@ -1,7 +1,7 @@
 package com.datn.pc_store.modules.order.controller;
 
 import com.datn.pc_store.common.dto.PageResponse;
-import com.datn.pc_store.modules.auth.security.CustomUserDetails;
+import com.datn.pc_store.common.util.SecurityUtils;
 import com.datn.pc_store.modules.order.dto.OrderAssignSerialRequest;
 import com.datn.pc_store.modules.order.dto.OrderCreateRequest;
 import com.datn.pc_store.modules.order.dto.OrderResponse;
@@ -21,9 +21,6 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -54,8 +51,8 @@ public class OrderController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant toDate,
             @ParameterObject @PageableDefault(size = 10, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        Long currentUserId = getCurrentUserId();
-        boolean staffOrAdmin = isStaffOrAdmin();
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        boolean staffOrAdmin = SecurityUtils.isStaffOrAdmin();
 
         Long effectiveUserId = staffOrAdmin ? userId : currentUserId;
 
@@ -70,7 +67,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> getOrderById(
             @Parameter(description = "ID đơn hàng") @PathVariable Long id
     ) {
-        return ResponseEntity.ok(orderService.getOrderById(id, getCurrentUserId(), isStaffOrAdmin()));
+        return ResponseEntity.ok(orderService.getOrderById(id, SecurityUtils.getCurrentUserId(), SecurityUtils.isStaffOrAdmin()));
     }
 
     @GetMapping("/by-code/{code}")
@@ -79,7 +76,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> getOrderByCode(
             @Parameter(description = "Mã đơn hàng") @PathVariable String code
     ) {
-        return ResponseEntity.ok(orderService.getOrderByCode(code, getCurrentUserId(), isStaffOrAdmin()));
+        return ResponseEntity.ok(orderService.getOrderByCode(code, SecurityUtils.getCurrentUserId(), SecurityUtils.isStaffOrAdmin()));
     }
 
     @PostMapping
@@ -87,7 +84,7 @@ public class OrderController {
             description = "Khách hàng đặt hàng trực tuyến hoặc Admin/Nhân viên bán hàng tạo đơn bán tại quầy / hộ khách.")
     public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody OrderCreateRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(orderService.createOrder(req, getCurrentUserId(), isStaffOrAdmin()));
+                .body(orderService.createOrder(req, SecurityUtils.getCurrentUserId(), SecurityUtils.isStaffOrAdmin()));
     }
 
     @PatchMapping("/{id}/status")
@@ -97,7 +94,7 @@ public class OrderController {
             @Parameter(description = "ID đơn hàng") @PathVariable Long id,
             @Valid @RequestBody OrderStatusUpdateRequest req
     ) {
-        return ResponseEntity.ok(orderService.updateStatus(id, req.getStatus(), getCurrentUserId(), isStaffOrAdmin()));
+        return ResponseEntity.ok(orderService.updateStatus(id, req.getStatus(), SecurityUtils.getCurrentUserId(), SecurityUtils.isStaffOrAdmin()));
     }
 
     @PostMapping("/{id}/assign-serials")
@@ -125,7 +122,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> completeOrder(
             @Parameter(description = "ID đơn hàng") @PathVariable Long id
     ) {
-        return ResponseEntity.ok(orderService.updateStatus(id, OrderStatus.COMPLETED, getCurrentUserId(), isStaffOrAdmin()));
+        return ResponseEntity.ok(orderService.updateStatus(id, OrderStatus.COMPLETED, SecurityUtils.getCurrentUserId(), SecurityUtils.isStaffOrAdmin()));
     }
 
     @DeleteMapping("/{id}")
@@ -134,26 +131,7 @@ public class OrderController {
     public ResponseEntity<Void> deleteOrder(
             @Parameter(description = "ID đơn hàng cần xóa") @PathVariable Long id
     ) {
-        orderService.deleteOrder(id, isStaffOrAdmin());
+        orderService.deleteOrder(id, SecurityUtils.isStaffOrAdmin());
         return ResponseEntity.noContent().build();
-    }
-
-    private Long getCurrentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CustomUserDetails principal) {
-            return principal.getId();
-        }
-        return null;
-    }
-
-    private boolean isStaffOrAdmin() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null) return false;
-        return auth.getAuthorities().stream().anyMatch(a ->
-                a.getAuthority().equals("ROLE_ADMIN")
-                        || a.getAuthority().equals("ROLE_MANAGER")
-                        || a.getAuthority().equals("ROLE_STAFF_SALES")
-                        || a.getAuthority().equals("ROLE_STAFF_WAREHOUSE")
-                        || a.getAuthority().equals("ROLE_STAFF_TECH"));
     }
 }

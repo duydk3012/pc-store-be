@@ -4,6 +4,7 @@ import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.common.exception.BadRequestException;
 import com.datn.pc_store.common.exception.DuplicateResourceException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
+import com.datn.pc_store.common.util.PaginationUtils;
 import com.datn.pc_store.modules.delivery.dto.DeliveryMetadataUpdateRequest;
 import com.datn.pc_store.modules.delivery.dto.DeliveryCreateRequest;
 import com.datn.pc_store.modules.delivery.dto.DeliveryResponse;
@@ -72,7 +73,8 @@ public class DeliveryService {
             Instant toDate,
             Pageable pageable
     ) {
-        validateFilters(fromDate, toDate, pageable);
+        PaginationUtils.validateDateRange(fromDate, toDate);
+        PaginationUtils.validateSort(pageable, SORTABLE_FIELDS);
         Specification<Delivery> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (resourceType != null) predicates.add(cb.equal(root.get("resourceType"), resourceType));
@@ -182,17 +184,6 @@ public class DeliveryService {
                 .lastModifiedBy(delivery.getLastModifiedBy())
                 .lastModifiedDate(delivery.getLastModifiedDate())
                 .build();
-    }
-
-    private void validateFilters(Instant fromDate, Instant toDate, Pageable pageable) {
-        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
-            throw new BadRequestException("fromDate phải nhỏ hơn hoặc bằng toDate.");
-        }
-        for (var sort : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(sort.getProperty())) {
-                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + sort.getProperty());
-            }
-        }
     }
 
     private void validateTransition(DeliveryStatus current, DeliveryStatus target) {

@@ -1,6 +1,7 @@
 package com.datn.pc_store.modules.order.dto;
 
 import com.datn.pc_store.modules.order.enums.OrderType;
+import com.datn.pc_store.modules.payment.enums.PaymentMethodCode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -23,6 +24,9 @@ public class OrderCreateRequest {
 
     @Schema(description = "Hình thức mua hàng (IN_STORE hoặc ONLINE, mặc định ONLINE)")
     private OrderType type;
+
+    @Schema(description = "Phương thức thanh toán (COD hoặc ZALOPAY, mặc định COD)", example = "COD")
+    private PaymentMethodCode paymentMethod;
 
     @Schema(description = "Tên người nhận hàng", example = "Nguyễn Văn A")
     private String recipientName;

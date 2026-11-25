@@ -97,7 +97,9 @@ public class OrderSerialService {
     public void release(Long orderId) {
         for (var link : assignments.findAllByOrderId(orderId)) {
             var serial = link.getProductSerial();
-            if (serial.getStatus() == ProductSerialStatus.PACKING || serial.getStatus() == ProductSerialStatus.DELIVERING) {
+            if (serial.getStatus() == ProductSerialStatus.PACKING
+                    || serial.getStatus() == ProductSerialStatus.DELIVERING
+                    || serial.getStatus() == ProductSerialStatus.SOLD) {
                 serial.setStatus(ProductSerialStatus.IN_STOCK);
                 assignments.delete(link);
             }
