@@ -7,6 +7,9 @@ import com.datn.pc_store.modules.analytics.dto.response.TaxQuarterlyResponse;
 import com.datn.pc_store.modules.analytics.dto.response.TaxSummaryResponse;
 import com.datn.pc_store.modules.analytics.service.TaxCalculationService;
 import com.datn.pc_store.modules.analytics.service.TaxExcelExportService;
+import com.datn.pc_store.modules.systemlog.annotation.LogActivity;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogAction;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogModule;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -56,6 +59,12 @@ public class TaxReportController {
     }
 
     @GetMapping("/export/excel")
+    @LogActivity(
+            module = SystemLogModule.SYSTEM,
+            action = SystemLogAction.EXPORT,
+            resourceType = "TAX_REPORT",
+            description = "Xuất báo cáo hoạch toán thuế ra file Excel (.xlsx)"
+    )
     @Operation(summary = "Xuất file Excel (.xlsx) Báo cáo Hoạch toán Thuế (Sheet 1: Tờ khai tổng hợp, Sheet 2: Bảng kê hóa đơn)")
     public ResponseEntity<byte[]> exportTaxExcel(@Valid @ParameterObject TaxReportFilterRequest filter) {
         int year = (filter != null && filter.getYear() != null)

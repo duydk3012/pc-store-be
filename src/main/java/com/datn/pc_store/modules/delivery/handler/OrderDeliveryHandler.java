@@ -5,17 +5,18 @@ import com.datn.pc_store.common.exception.ResourceNotFoundException;
 import com.datn.pc_store.modules.delivery.enums.DeliveryResourceType;
 import com.datn.pc_store.modules.delivery.enums.DeliveryStatus;
 import com.datn.pc_store.modules.order.entity.Order;
+import com.datn.pc_store.modules.order.entity.OrderItem;
 import com.datn.pc_store.modules.order.enums.OrderStatus;
 import com.datn.pc_store.modules.order.repository.OrderRepository;
 import com.datn.pc_store.modules.order.service.InvoiceService;
 import com.datn.pc_store.modules.order.service.OrderSerialService;
+import com.datn.pc_store.modules.payment.service.PaymentService;
+import com.datn.pc_store.modules.product.service.ProductStockService;
 import com.datn.pc_store.modules.warranty.service.WarrantyActivationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
@@ -24,6 +25,8 @@ public class OrderDeliveryHandler implements DeliveryResourceHandler {
     private final OrderSerialService orderSerialService;
     private final WarrantyActivationService warrantyActivationService;
     private final InvoiceService invoiceService;
+    private final PaymentService paymentService;
+    private final ProductStockService productStockService;
 
     @Override
     public DeliveryResourceType getResourceType() {
@@ -69,10 +72,20 @@ public class OrderDeliveryHandler implements DeliveryResourceHandler {
             orderSerialService.markSold(resourceId);
             warrantyActivationService.activateForCompletedOrder(order);
             invoiceService.createInvoiceForCompletedOrder(order);
+            paymentService.completePaymentForOrder(order);
         } else {
             order.setStatus(OrderStatus.RETURNED);
             orderSerialService.release(resourceId);
+            orderRepository.saveAndFlush(order);
+            if (productStockService != null && order.getItems() != null && !order.getItems().isEmpty()) {
+                List<Long> productIds = order.getItems().stream()
+                        .map(OrderItem::getProductId)
+                        .distinct()
+                        .toList();
+                productStockService.syncProductStockStatus(productIds);
+            }
             invoiceService.cancelInvoiceForOrder(resourceId);
+            paymentService.cancelPendingPaymentsForOrder(resourceId);
         }
     }
 

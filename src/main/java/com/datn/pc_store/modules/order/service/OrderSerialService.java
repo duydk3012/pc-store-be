@@ -114,10 +114,9 @@ public class OrderSerialService {
     private void releaseInternal(Long orderId, boolean includeSold) {
         for (var link : assignments.findAllByOrderId(orderId)) {
             var serial = link.getProductSerial();
-            ProductSerialStatus st = serial.getStatus();
-            if (st == ProductSerialStatus.PACKING
-                    || st == ProductSerialStatus.DELIVERING
-                    || (includeSold && st == ProductSerialStatus.SOLD)) {
+            if (serial.getStatus() == ProductSerialStatus.PACKING
+                    || serial.getStatus() == ProductSerialStatus.DELIVERING
+                    || serial.getStatus() == ProductSerialStatus.SOLD) {
                 serial.setStatus(ProductSerialStatus.IN_STOCK);
                 assignments.delete(link);
             }

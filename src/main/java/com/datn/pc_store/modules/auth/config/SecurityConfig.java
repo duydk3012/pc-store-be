@@ -51,6 +51,12 @@ public class SecurityConfig {
                                 "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
 
+                        // Public payment methods, ZaloPay Server-to-Server Callback, Return URL & Status check
+                        .requestMatchers(HttpMethod.GET, "/api/payments/methods",
+                                "/api/payments/zalopay/return",
+                                "/api/payments/zalopay/status/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/payments/zalopay/callback").permitAll()
+
                         // Authorize reviews before the broader public catalog matcher.
                         // ReviewService checks the completed purchase and review ownership on writes.
                         .requestMatchers(HttpMethod.GET, reviews, reviews + "/{id}").permitAll()
@@ -65,6 +71,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/warranties/**", "/api/admin/warranty-requests/**",
                                 "/api/admin/warranty-parts/**", "/api/admin/warranty-policies/**")
                         .hasAnyRole("ADMIN", "MANAGER", "STAFF_TECH", "STAFF_SALES")
+
+                        // System logs and audit trail for Admin and Manager
+                        .requestMatchers("/api/admin/system-logs", "/api/admin/system-logs/**")
+                        .hasAnyRole("ADMIN", "MANAGER")
 
                         // Administrative catalog, users, suppliers and other admin endpoints.
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -90,6 +100,7 @@ public class SecurityConfig {
 
                         // Orders: serial assignment and carrier handover restricted to authorized staff.
                         // Order completion, creation, updates, and reads require authentication.
+                        .requestMatchers("/api/cart", "/api/cart/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/orders/*/assign-serials")
                         .hasAnyRole("ADMIN", "MANAGER", "STAFF_WAREHOUSE", "STAFF_SALES")
                         .requestMatchers(HttpMethod.POST, "/api/orders/*/handover")
@@ -99,6 +110,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/orders", "/api/orders/**")
                         .hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers("/api/orders", "/api/orders/**").authenticated()
+
+                        // Payments: COD confirmation by staff/admin; payment creation & order history require login
+                        .requestMatchers(HttpMethod.POST, "/api/payments/*/cod/confirm")
+                        .hasAnyRole("ADMIN", "MANAGER", "STAFF_SALES", "STAFF_WAREHOUSE")
+                        .requestMatchers("/api/payments", "/api/payments/**").authenticated()
 
                         // Remaining auth operations and comment writes require a logged-in user.
                         .anyRequest().authenticated())

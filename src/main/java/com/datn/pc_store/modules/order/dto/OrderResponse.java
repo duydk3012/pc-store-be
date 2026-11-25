@@ -2,6 +2,7 @@ package com.datn.pc_store.modules.order.dto;
 
 import com.datn.pc_store.modules.order.enums.OrderStatus;
 import com.datn.pc_store.modules.order.enums.OrderType;
+import com.datn.pc_store.modules.payment.enums.PaymentStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
@@ -62,6 +63,21 @@ public class OrderResponse {
 
     @Schema(description = "Trạng thái đơn hàng", example = "PENDING")
     private OrderStatus status;
+
+    @Schema(description = "Mã phương thức thanh toán (COD, ZALOPAY)", example = "COD")
+    private String paymentMethod;
+
+    @Schema(description = "Tên phương thức thanh toán", example = "Thanh toán khi nhận hàng (COD)")
+    private String paymentMethodName;
+
+    @Schema(description = "Trạng thái thanh toán: PENDING, SUCCESS, FAILED", example = "PENDING")
+    private PaymentStatus paymentStatus;
+
+    @Schema(description = "Mã giao dịch thanh toán", example = "261123_10001_583920")
+    private String transactionCode;
+
+    @Schema(description = "Thời điểm thanh toán thành công")
+    private Instant paidAt;
 
     @Schema(description = "Danh sách sản phẩm trong đơn")
     private List<OrderItemResponse> items;

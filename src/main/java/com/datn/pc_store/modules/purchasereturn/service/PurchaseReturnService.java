@@ -2,9 +2,11 @@ package com.datn.pc_store.modules.purchasereturn.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.common.exception.BadRequestException;
+import com.datn.pc_store.common.exception.ConflictException;
 import com.datn.pc_store.common.exception.DuplicateResourceException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
-import com.datn.pc_store.modules.auth.security.CustomUserDetails;
+import com.datn.pc_store.common.util.PaginationUtils;
+import com.datn.pc_store.common.util.SecurityUtils;
 import com.datn.pc_store.modules.delivery.enums.DeliveryResourceType;
 import com.datn.pc_store.modules.delivery.service.DeliveryService;
 import com.datn.pc_store.modules.goodsreceipt.entity.GoodsReceipt;
@@ -25,17 +27,18 @@ import com.datn.pc_store.modules.purchasereturn.repository.PurchaseReturnItemRep
 import com.datn.pc_store.modules.purchasereturn.repository.PurchaseReturnRepository;
 import com.datn.pc_store.modules.suppliers.entity.Supplier;
 import com.datn.pc_store.modules.suppliers.repository.SupplierRepository;
+import com.datn.pc_store.modules.systemlog.dto.SystemLogCreateCommand;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogAction;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogModule;
+import com.datn.pc_store.modules.systemlog.event.SystemLogPublisher;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.*;
@@ -66,6 +69,7 @@ public class PurchaseReturnService {
     private final PurchaseReturnMapper purchaseReturnMapper;
     private final EntityManager entityManager;
     private final DeliveryService deliveryService;
+    private final SystemLogPublisher systemLogPublisher;
 
     @Transactional(readOnly = true)
     public PageResponse<PurchaseReturnResponse> getAllReturns(
@@ -76,19 +80,14 @@ public class PurchaseReturnService {
             Instant toDate,
             Pageable pageable
     ) {
-        validateDates(fromDate, toDate);
-        for (var sort : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(sort.getProperty())) {
-                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + sort.getProperty()
-                        + ". Sử dụng sort=createdDate,desc hoặc bỏ tham số sort.");
-            }
-        }
+        PaginationUtils.validateDateRange(fromDate, toDate);
+        PaginationUtils.validateSort(pageable, SORTABLE_FIELDS);
 
-        boolean isAdmin = hasRole("ADMIN");
-        boolean isManager = hasRole("MANAGER");
-        boolean isWarehouse = hasRole("STAFF_WAREHOUSE");
+        boolean isAdmin = SecurityUtils.hasRole("ADMIN");
+        boolean isManager = SecurityUtils.hasRole("MANAGER");
+        boolean isWarehouse = SecurityUtils.hasRole("STAFF_WAREHOUSE");
 
-        Long currentUserId = getCurrentUserId();
+        Long currentUserId = SecurityUtils.getCurrentUserId();
         int filterMode = 0; // 0: ADMIN (all)
         Collection<PurchaseReturnStatus> managerStatuses = List.of(
                 PurchaseReturnStatus.PENDING,
@@ -148,7 +147,7 @@ public class PurchaseReturnService {
             throw new BadRequestException("Khi khởi tạo phiếu hoàn trả, trạng thái chỉ có thể là PENDING.");
         }
 
-        Long currentUserId = getCurrentUserId();
+        Long currentUserId = SecurityUtils.getCurrentUserId();
 
         PurchaseReturn pr = PurchaseReturn.builder()
                 .code(code)
@@ -206,6 +205,17 @@ public class PurchaseReturnService {
 
         PurchaseReturn saved = purchaseReturnRepository.saveAndFlush(pr);
         log.info("Đã tạo phiếu hoàn trả NCC id: {} với trạng thái: {}", saved.getId(), saved.getStatus());
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.PURCHASE_RETURN)
+                    .action(SystemLogAction.CREATE)
+                    .resourceType("PURCHASE_RETURN")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getCode())
+                    .description("Tạo phiếu hoàn trả nhà cung cấp " + saved.getCode())
+                    .detailMap(Map.of("supplierId", saved.getSupplierId(), "totalAmount", saved.getTotalAmount()))
+                    .build());
+        }
         return toEnrichedResponse(saved);
     }
 
@@ -214,7 +224,7 @@ public class PurchaseReturnService {
         PurchaseReturn pr = lockReturn(id);
         requireEditable(pr);
 
-        Long currentUserId = getCurrentUserId();
+        Long currentUserId = SecurityUtils.getCurrentUserId();
 
         String code = req.getCode() != null ? req.getCode().trim() : "";
         validateCode(code, id);
@@ -286,11 +296,10 @@ public class PurchaseReturnService {
             return toEnrichedResponse(pr);
         }
 
-        boolean isAdmin = hasRole("ADMIN");
-        boolean isManager = hasRole("MANAGER");
-        boolean isWarehouse = hasRole("STAFF_WAREHOUSE");
-        Long currentUserId = getCurrentUserId();
-        Long createdBy = pr.getCreatedBy();
+        boolean isAdmin = SecurityUtils.hasRole("ADMIN");
+        boolean isManager = SecurityUtils.hasRole("MANAGER");
+        boolean isWarehouse = SecurityUtils.hasRole("STAFF_WAREHOUSE");
+        Long currentUserId = SecurityUtils.getCurrentUserId();
 
         if (current == PurchaseReturnStatus.CANCELLED) {
             throw conflict("Phiếu hoàn trả đã bị hủy, không thể thay đổi trạng thái.");
@@ -332,13 +341,13 @@ public class PurchaseReturnService {
             }
             case DELIVERING -> {
                 if (!isAdmin && !isManager && !isWarehouse) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Không có quyền chuyển trạng thái giao hàng.");
+                    throw new AccessDeniedException("Không có quyền chuyển trạng thái giao hàng.");
                 }
                 pr.startDelivery();
             }
             case COMPLETED -> {
                 if (!isAdmin && !isManager) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản lý (MANAGER) hoặc Quản trị viên (ADMIN) mới có quyền xác nhận NCC đã nhận hàng hoàn.");
+                    throw new AccessDeniedException("Chỉ Quản lý (MANAGER) hoặc Quản trị viên (ADMIN) mới có quyền xác nhận NCC đã nhận hàng hoàn.");
                 }
                 for (PurchaseReturnItem item : pr.getItems()) {
                     ProductSerial ps = item.getProductSerial();
@@ -382,6 +391,17 @@ public class PurchaseReturnService {
 
         PurchaseReturn saved = purchaseReturnRepository.saveAndFlush(pr);
         log.info("Phiếu hoàn trả id: {} đã chuyển từ trạng thái {} sang {}", id, current, target);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.PURCHASE_RETURN)
+                    .action(SystemLogAction.UPDATE_STATUS)
+                    .resourceType("PURCHASE_RETURN")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getCode())
+                    .description("Chuyển trạng thái phiếu hoàn trả NCC " + saved.getCode() + " từ " + current + " sang " + target)
+                    .detailMap(Map.of("oldStatus", current.name(), "newStatus", target.name()))
+                    .build());
+        }
         return toEnrichedResponse(saved);
     }
 
@@ -391,20 +411,24 @@ public class PurchaseReturnService {
         if (pr.getStatus() != PurchaseReturnStatus.PENDING) {
             throw conflict("Chỉ có thể xóa phiếu hoàn trả khi ở trạng thái chờ xử lý (PENDING).");
         }
-        Long currentUserId = getCurrentUserId();
+        Long currentUserId = SecurityUtils.getCurrentUserId();
         if (pr.getCreatedBy() != null && currentUserId != null
-                && !currentUserId.equals(pr.getCreatedBy()) && !hasRole("ADMIN")) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo hoặc Quản trị viên mới có quyền xóa phiếu hoàn trả.");
+                && !currentUserId.equals(pr.getCreatedBy()) && !SecurityUtils.hasRole("ADMIN")) {
+            throw new AccessDeniedException("Chỉ người tạo hoặc Quản trị viên mới có quyền xóa phiếu hoàn trả.");
         }
-        // Hoàn nguyên trạng thái serial về DEFECTIVE trước khi xóa phiếu
-        for (PurchaseReturnItem item : pr.getItems()) {
-            ProductSerial ps = item.getProductSerial();
-            if (ps != null && ps.getStatus() == ProductSerialStatus.PENDING_RETURN) {
-                ps.setStatus(ProductSerialStatus.DEFECTIVE);
-            }
-        }
+        String returnCode = pr.getCode();
         purchaseReturnRepository.delete(pr);
         log.info("Đã xóa phiếu hoàn trả id: {}", id);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.PURCHASE_RETURN)
+                    .action(SystemLogAction.DELETE)
+                    .resourceType("PURCHASE_RETURN")
+                    .resourceId(id)
+                    .resourceCode(returnCode)
+                    .description("Xóa phiếu hoàn trả nhà cung cấp " + returnCode)
+                    .build());
+        }
     }
 
     @Transactional(readOnly = true)
@@ -693,16 +717,16 @@ public class PurchaseReturnService {
     }
 
     private void validateReadPermission(PurchaseReturn pr) {
-        boolean isAdmin = hasRole("ADMIN");
-        boolean isManager = hasRole("MANAGER");
-        boolean isWarehouse = hasRole("STAFF_WAREHOUSE");
-        Long currentUserId = getCurrentUserId();
+        boolean isAdmin = SecurityUtils.hasRole("ADMIN");
+        boolean isManager = SecurityUtils.hasRole("MANAGER");
+        boolean isWarehouse = SecurityUtils.hasRole("STAFF_WAREHOUSE");
+        Long currentUserId = SecurityUtils.getCurrentUserId();
 
         if (isAdmin) return;
 
         if (isWarehouse) {
             if (pr.getCreatedBy() == null || currentUserId == null || !currentUserId.equals(pr.getCreatedBy())) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn chỉ có thể xem phiếu hoàn trả do chính mình tạo.");
+                throw new AccessDeniedException("Bạn chỉ có thể xem phiếu hoàn trả do chính mình tạo.");
             }
             return;
         }
@@ -710,35 +734,13 @@ public class PurchaseReturnService {
         if (isManager) {
             if (pr.getStatus() == PurchaseReturnStatus.RETURNED || pr.getStatus() == PurchaseReturnStatus.CANCELLED) {
                 if (pr.getCreatedBy() == null || currentUserId == null || !currentUserId.equals(pr.getCreatedBy())) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Quản lý chỉ xem được phiếu đã trả về kho hoặc phiếu đã hủy do chính mình tạo.");
+                    throw new AccessDeniedException("Quản lý chỉ xem được phiếu đã trả về kho hoặc phiếu đã hủy do chính mình tạo.");
                 }
             }
         }
     }
 
-    private void validateDates(Instant fromDate, Instant toDate) {
-        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
-            throw new BadRequestException("Thời gian bắt đầu (fromDate) phải trước hoặc bằng thời gian kết thúc (toDate).");
-        }
-    }
-
-    private Long getCurrentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CustomUserDetails userDetails) {
-            return userDetails.getId();
-        }
-        return null;
-    }
-
-    private boolean hasRole(String roleName) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null) return false;
-        String target = "ROLE_" + roleName;
-        return auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals(target));
-    }
-
-    private ResponseStatusException conflict(String message) {
-        return new ResponseStatusException(HttpStatus.CONFLICT, message);
+    private ConflictException conflict(String message) {
+        return new ConflictException(message);
     }
 }

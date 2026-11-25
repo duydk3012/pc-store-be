@@ -18,6 +18,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/admin/users")
 @RequiredArgsConstructor
@@ -43,6 +45,30 @@ public class UserController {
             @PageableDefault(size = 10, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return ResponseEntity.ok(userService.getAllUsers(keyword, role, status, pageable));
+    }
+
+    @GetMapping("/count-by-role")
+    @Operation(summary = "Đếm số lượng người dùng theo vai trò",
+            description = "Trả về danh sách số lượng người dùng theo từng vai trò (ADMIN, MANAGER, CUSTOMER, STAFF_WAREHOUSE, STAFF_SALES, STAFF_TECH), có thể lọc theo trạng thái tài khoản hoặc vai trò cụ thể.")
+    public ResponseEntity<List<UserRoleCountResponse>> countUsersByRole(
+            @Parameter(description = "Lọc theo vai trò tài khoản (tùy chọn)")
+            @RequestParam(required = false) RoleType role,
+            @Parameter(description = "Lọc theo trạng thái: ACTIVE, INACTIVE hoặc BANNED (tùy chọn)")
+            @RequestParam(required = false) UserStatus status
+    ) {
+        return ResponseEntity.ok(userService.countUsersByRole(role, status));
+    }
+
+    @GetMapping("/count")
+    @Operation(summary = "Đếm tổng số lượng người dùng",
+            description = "Đếm tổng số lượng người dùng chưa bị xóa, có thể lọc theo vai trò và trạng thái.")
+    public ResponseEntity<Long> countUsers(
+            @Parameter(description = "Lọc theo vai trò tài khoản (tùy chọn)")
+            @RequestParam(required = false) RoleType role,
+            @Parameter(description = "Lọc theo trạng thái: ACTIVE, INACTIVE hoặc BANNED (tùy chọn)")
+            @RequestParam(required = false) UserStatus status
+    ) {
+        return ResponseEntity.ok(userService.countUsers(role, status));
     }
 
     @GetMapping("/{id}")

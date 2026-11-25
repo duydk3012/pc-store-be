@@ -57,8 +57,14 @@ app:
     refresh-expiration-ms: 604800000 # refresh token: 7 ngày
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173} # Vite dev server
-  ml-service:
-    url: ${ML_SERVICE_URL:http://localhost:8000} # FastAPI
+  zalopay:
+    app-id: ${ZALOPAY_APP_ID:554}
+    key1: ${ZALOPAY_KEY1:}
+    key2: ${ZALOPAY_KEY2:}
+    create-url: ${ZALOPAY_CREATE_URL:https://sb-openapi.zalopay.vn/v2/create}
+    query-url: ${ZALOPAY_QUERY_URL:https://sb-openapi.zalopay.vn/v2/query}
+    callback-url: ${ZALOPAY_CALLBACK_URL:}
+    redirect-url: ${ZALOPAY_REDIRECT_URL:http://localhost:5173/payment/zalopay-return}
   cleanup:
     enabled: true
     refresh-token-cron: "0 0 3 * * *"   # giây phút giờ ngày tháng thứ

@@ -18,6 +18,17 @@ public enum RoleType {
         return value;
     }
 
+    public String getLabel() {
+        return switch (this) {
+            case ADMIN -> "Quản trị viên";
+            case MANAGER -> "Quản lý";
+            case CUSTOMER -> "Khách hàng";
+            case STAFF_WAREHOUSE -> "Nhân viên kho";
+            case STAFF_SALES -> "Nhân viên bán hàng";
+            case STAFF_TECH -> "Nhân viên kỹ thuật";
+        };
+    }
+
     public static RoleType fromValue(int value) {
         for (RoleType role : values()) {
             if (role.value == value) return role;

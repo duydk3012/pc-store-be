@@ -2,6 +2,7 @@ package com.datn.pc_store.modules.product.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.common.exception.*;
+import com.datn.pc_store.common.util.PaginationUtils;
 import com.datn.pc_store.common.util.SlugUtils;
 import com.datn.pc_store.modules.brand.repository.BrandRepository;
 import com.datn.pc_store.modules.category.repository.CategoryRepository;
@@ -34,16 +35,12 @@ public class ProductService {
     private final BrandRepository brandRepository;
     private final CategoryRepository categoryRepository;
     private final ProductMapper productMapper;
+    private final ProductStockService productStockService;
 
     @Transactional(readOnly = true)
     public PageResponse<ProductResponse> getAllProducts(String keyword, ProductStatus status, ProductType productType,
                                                         Long brandId, Long categoryId, boolean publicOnly, Pageable pageable) {
-        for (var order : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(order.getProperty())) {
-                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + order.getProperty()
-                        + ". Sử dụng sort=createdDate,desc hoặc bỏ tham số sort để dùng mặc định.");
-            }
-        }
+        PaginationUtils.validateSort(pageable, SORTABLE_FIELDS);
         var page = productRepository.searchProducts(keyword, status, productType, brandId, categoryId, publicOnly, pageable);
         Map<Long, List<ProductCategory>> links = loadCategoryLinks(page.getContent());
         Map<Long, List<BuildingPc>> pcItems = loadBuildingPcLinks(page.getContent());
@@ -53,12 +50,16 @@ public class ProductService {
                 .collect(Collectors.toSet());
         Map<Long, Product> compMap = allCompIds.isEmpty() ? Map.of()
                 : productRepository.findAllById(allCompIds).stream().collect(Collectors.toMap(Product::getId, p -> p));
+        Map<Long, Integer> stockMap = productStockService != null
+                ? productStockService.getAvailableStockMap(page.getContent())
+                : Map.of();
 
         return PageResponse.of(page.map(product -> toResponse(
                 product,
                 links.getOrDefault(product.getId(), List.of()),
                 pcItems.getOrDefault(product.getId(), List.of()),
-                compMap
+                compMap,
+                stockMap.getOrDefault(product.getId(), 0)
         )));
     }
 
@@ -282,12 +283,15 @@ public class ProductService {
             Set<Long> compIds = bpcList.stream().map(BuildingPc::getProductId).collect(Collectors.toSet());
             compMap = productRepository.findAllById(compIds).stream().collect(Collectors.toMap(Product::getId, p -> p));
         }
-        return toResponse(product, links, bpcList, compMap);
+        int availableStock = productStockService != null ? productStockService.getAvailableStock(product) : 0;
+        return toResponse(product, links, bpcList, compMap, availableStock);
     }
 
     private ProductResponse toResponse(Product product, List<ProductCategory> links,
-                                       List<BuildingPc> bpcList, Map<Long, Product> compMap) {
+                                       List<BuildingPc> bpcList, Map<Long, Product> compMap,
+                                       int availableStock) {
         ProductResponse response = productMapper.toResponse(product);
+        response.setAvailableStock(availableStock);
         response.setCategoryIds(links.stream().map(ProductCategory::getCategoryId).collect(Collectors.toCollection(TreeSet::new)));
         response.setPrimaryCategoryId(links.stream().filter(ProductCategory::isPrimary)
                 .map(ProductCategory::getCategoryId).findFirst().orElse(null));

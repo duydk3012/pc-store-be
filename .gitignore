@@ -3,6 +3,7 @@ document/
 docs/
 diagram/
 readme/
+src/main/resources/db/migration/
 *.xlsx
 
 HELP.md

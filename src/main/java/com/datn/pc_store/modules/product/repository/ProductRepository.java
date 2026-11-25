@@ -7,6 +7,8 @@ import org.springframework.data.domain.*;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import jakarta.persistence.LockModeType;
 
@@ -14,6 +16,17 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Product p WHERE p.id=:id")
     Optional<Product> findForUpdate(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Product p WHERE p.id IN :ids ORDER BY p.id ASC")
+    List<Product> findAllByIdForUpdate(@Param("ids") Collection<Long> ids);
+
+    @Query(value = """
+        SELECT id, code, name, slug, image_url, product_type, price, status, is_deleted
+        FROM products
+        WHERE id IN (:ids)
+    """, nativeQuery = true)
+    List<Object[]> findRawProductsIncludingDeleted(@Param("ids") Collection<Long> ids);
 
     Optional<Product> findBySlug(String slug);
 

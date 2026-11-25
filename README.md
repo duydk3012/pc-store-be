@@ -10,7 +10,7 @@ Sau khi cấu hình kết nối MySQL và JWT trong `.env`, chạy:
 
 Flyway tự tạo bảng và nạp **400 bản ghi cho 32 bảng** qua migration
 `V2__seed_demo_data.sql`. Chỉ nạp một lần; khởi động lại không chèn trùng.
-Migration đã gộp dành cho database mới; xem `readme/DATABASE_MIGRATIONS.md` về database đã có lịch sử Flyway.
+Migration đã gộp dành cho database mới; xem `docs/DATABASE_MIGRATIONS.md` về database đã có lịch sử Flyway.
 
 Tài khoản demo:
 
