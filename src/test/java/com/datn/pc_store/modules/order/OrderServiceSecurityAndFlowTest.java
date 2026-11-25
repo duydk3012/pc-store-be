@@ -189,7 +189,6 @@ class OrderServiceSecurityAndFlowTest {
 
         OrderResponse returned = orderService.updateStatus(50L, OrderStatus.RETURNED, 1L, true);
         assertEquals(OrderStatus.RETURNED, returned.getStatus());
-        verify(warrantyActivationService).voidForOrder(50L);
         verify(orderSerialService).releaseIncludingSold(50L);
     }
 

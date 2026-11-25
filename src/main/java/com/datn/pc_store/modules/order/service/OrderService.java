@@ -375,7 +375,6 @@ public class OrderService {
 
         if (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REJECTED || newStatus == OrderStatus.RETURNED) {
             if (currentStatus == OrderStatus.COMPLETED && newStatus == OrderStatus.RETURNED) {
-                warrantyActivationService.voidForOrder(id);
                 orderSerialService.releaseIncludingSold(id);
             } else {
                 orderSerialService.release(id);
