@@ -13,7 +13,7 @@ import com.datn.pc_store.modules.order.repository.OrderItemSerialRepository;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
 import com.datn.pc_store.modules.warranty.dto.PublicWarrantyResponse;
-import com.datn.pc_store.modules.warranty.entity.WarrantPolicy;
+import com.datn.pc_store.modules.warranty.entity.WarrantyPolicy;
 import com.datn.pc_store.modules.warranty.entity.Warranty;
 import com.datn.pc_store.modules.warranty.repository.WarrantyPolicyRepository;
 import com.datn.pc_store.modules.warranty.repository.WarrantyRepository;
@@ -99,7 +99,7 @@ public class PublicWarrantyService {
         String policyName = "Chính sách tiêu chuẩn";
         int durationDays = 365;
         if (w.getWarrantyPolicyId() != null) {
-            WarrantPolicy wp = policies.findById(w.getWarrantyPolicyId()).orElse(null);
+            WarrantyPolicy wp = policies.findById(w.getWarrantyPolicyId()).orElse(null);
             if (wp != null) {
                 policyName = wp.getName();
                 durationDays = wp.getDurationDays();
