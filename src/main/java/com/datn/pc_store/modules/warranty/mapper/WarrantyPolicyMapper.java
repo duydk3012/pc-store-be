@@ -3,7 +3,7 @@ package com.datn.pc_store.modules.warranty.mapper;
 import com.datn.pc_store.modules.warranty.dto.WarrantyPolicyCreateRequest;
 import com.datn.pc_store.modules.warranty.dto.WarrantyPolicyResponse;
 import com.datn.pc_store.modules.warranty.dto.WarrantyPolicyUpdateRequest;
-import com.datn.pc_store.modules.warranty.entity.WarrantPolicy;
+import com.datn.pc_store.modules.warranty.entity.WarrantyPolicy;
 import org.mapstruct.*;
 
 import java.util.List;
@@ -12,13 +12,13 @@ import java.util.List;
 public interface WarrantyPolicyMapper {
 
     @Mapping(target = "id", ignore = true)
-    WarrantPolicy toEntity(WarrantyPolicyCreateRequest req);
+    WarrantyPolicy toEntity(WarrantyPolicyCreateRequest req);
 
-    WarrantyPolicyResponse toResponse(WarrantPolicy entity);
+    WarrantyPolicyResponse toResponse(WarrantyPolicy entity);
 
-    List<WarrantyPolicyResponse> toResponseList(List<WarrantPolicy> entities);
+    List<WarrantyPolicyResponse> toResponseList(List<WarrantyPolicy> entities);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
-    void updateEntityFromDto(WarrantyPolicyUpdateRequest req, @MappingTarget WarrantPolicy entity);
+    void updateEntityFromDto(WarrantyPolicyUpdateRequest req, @MappingTarget WarrantyPolicy entity);
 }

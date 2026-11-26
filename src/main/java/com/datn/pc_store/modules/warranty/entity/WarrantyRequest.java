@@ -43,4 +43,7 @@ public class WarrantyRequest extends BaseEntity {
 
     @Column(name = "completed_at")
     private Instant completedAt;
+
+    @Column(name = "total_cost", nullable = false)
+    private long totalCost = 0L;
 }

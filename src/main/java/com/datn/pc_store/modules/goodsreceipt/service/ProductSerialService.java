@@ -3,6 +3,7 @@ package com.datn.pc_store.modules.goodsreceipt.service;
 import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.common.exception.BadRequestException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
+import com.datn.pc_store.common.util.PaginationUtils;
 import com.datn.pc_store.modules.goodsreceipt.dto.ProductSerialResponse;
 import com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial;
 import com.datn.pc_store.modules.goodsreceipt.enums.ProductSerialStatus;
@@ -51,12 +52,7 @@ public class ProductSerialService {
         if (!productRepository.existsById(productId)) {
             throw new ResourceNotFoundException("Sản phẩm", "id", productId);
         }
-        for (var sort : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(sort.getProperty())) {
-                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + sort.getProperty()
-                        + ". Sử dụng sort=createdDate,desc hoặc bỏ tham số sort để dùng mặc định.");
-            }
-        }
+        PaginationUtils.validateSort(pageable, SORTABLE_FIELDS);
         Page<com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial> page =
                 productSerialRepository.findActiveSerialsByProduct(productId, status, pageable);
         return PageResponse.of(page.map(goodsReceiptMapper::toSerialResponse));
@@ -76,12 +72,7 @@ public class ProductSerialService {
         if (productId != null && !productRepository.existsById(productId)) {
             throw new ResourceNotFoundException("Sản phẩm", "id", productId);
         }
-        for (var sort : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(sort.getProperty())) {
-                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + sort.getProperty()
-                        + ". Sử dụng sort=createdDate,desc hoặc bỏ tham số sort để dùng mặc định.");
-            }
-        }
+        PaginationUtils.validateSort(pageable, SORTABLE_FIELDS);
         String cleanKeyword = (keyword != null && !keyword.trim().isEmpty()) ? keyword.trim() : null;
         Page<ProductSerial> page = productSerialRepository.searchSerials(
                 supplierId, productId, status, cleanKeyword, pageable

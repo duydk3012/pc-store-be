@@ -2,6 +2,7 @@ package com.datn.pc_store.modules.purchaseorder.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.common.exception.*;
+import com.datn.pc_store.common.util.PaginationUtils;
 import com.datn.pc_store.modules.product.enums.ProductStatus;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
 import com.datn.pc_store.modules.purchaseorder.dto.*;
@@ -11,13 +12,15 @@ import com.datn.pc_store.modules.purchaseorder.mapper.PurchaseOrderMapper;
 import com.datn.pc_store.modules.purchaseorder.repository.PurchaseOrderRepository;
 import com.datn.pc_store.modules.suppliers.enums.SupplierStatus;
 import com.datn.pc_store.modules.suppliers.repository.SupplierRepository;
+import com.datn.pc_store.modules.systemlog.dto.SystemLogCreateCommand;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogAction;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogModule;
+import com.datn.pc_store.modules.systemlog.event.SystemLogPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.*;
@@ -36,17 +39,13 @@ public class PurchaseOrderService {
     private final SupplierRepository supplierRepository;
     private final ProductRepository productRepository;
     private final PurchaseOrderMapper purchaseOrderMapper;
+    private final SystemLogPublisher systemLogPublisher;
 
     @Transactional(readOnly = true)
     public PageResponse<PurchaseOrderResponse> getAllOrders(String keyword, PurchaseOrderStatus status, Long supplierId,
                                                            Instant fromDate, Instant toDate, Pageable pageable) {
-        validateDates(fromDate, toDate);
-        for (var sort : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(sort.getProperty())) {
-                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + sort.getProperty()
-                        + ". Sử dụng sort=createdDate,desc hoặc bỏ tham số sort.");
-            }
-        }
+        PaginationUtils.validateDateRange(fromDate, toDate);
+        PaginationUtils.validateSort(pageable, SORTABLE_FIELDS);
         return PageResponse.of(purchaseOrderRepository.searchOrders(keyword, status, supplierId, fromDate, toDate, pageable)
                 .map(purchaseOrderMapper::toResponse));
     }
@@ -79,6 +78,17 @@ public class PurchaseOrderService {
         attachItems(order, items);
         PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
         log.info("Đã tạo đơn nhập hàng id: {}", saved.getId());
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.PURCHASE_ORDER)
+                    .action(SystemLogAction.CREATE)
+                    .resourceType("PURCHASE_ORDER")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getCode())
+                    .description("Tạo đơn đặt hàng mua mới " + saved.getCode())
+                    .detailMap(Map.of("supplierId", saved.getSupplierId(), "totalAmount", saved.getTotalAmount()))
+                    .build());
+        }
         return purchaseOrderMapper.toResponse(saved);
     }
 
@@ -132,8 +142,20 @@ public class PurchaseOrderService {
             default -> throw conflict("Không thể quay lại trạng thái nháp.");
         }
         order.setStatus(target);
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
         log.info("Chuyển trạng thái đơn nhập hàng id: {} từ {} sang {}", id, current, target);
-        return purchaseOrderMapper.toResponse(purchaseOrderRepository.saveAndFlush(order));
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.PURCHASE_ORDER)
+                    .action(SystemLogAction.UPDATE_STATUS)
+                    .resourceType("PURCHASE_ORDER")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getCode())
+                    .description("Chuyển trạng thái đơn đặt hàng mua " + saved.getCode() + " từ " + current + " sang " + target)
+                    .detailMap(Map.of("oldStatus", current.name(), "newStatus", target.name()))
+                    .build());
+        }
+        return purchaseOrderMapper.toResponse(saved);
     }
 
     @Transactional
@@ -144,6 +166,16 @@ public class PurchaseOrderService {
         order.setDeleted(true);
         purchaseOrderRepository.saveAndFlush(order);
         log.info("Đã xóa mềm đơn nhập hàng nháp id: {}", id);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.PURCHASE_ORDER)
+                    .action(SystemLogAction.DELETE)
+                    .resourceType("PURCHASE_ORDER")
+                    .resourceId(order.getId())
+                    .resourceCode(order.getCode())
+                    .description("Xóa mềm đơn đặt hàng mua nháp " + order.getCode())
+                    .build());
+        }
     }
 
     private PurchaseOrder lockOrder(Long id) {
@@ -270,7 +302,7 @@ public class PurchaseOrderService {
         }
     }
 
-    private ResponseStatusException conflict(String message) {
-        return new ResponseStatusException(HttpStatus.CONFLICT, message);
+    private ConflictException conflict(String message) {
+        return new ConflictException(message);
     }
 }

@@ -1,11 +1,12 @@
 package com.datn.pc_store.modules.warranty.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
+import com.datn.pc_store.common.exception.BadRequestException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
 import com.datn.pc_store.modules.brand.repository.BrandRepository;
 import com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial;
+import com.datn.pc_store.modules.goodsreceipt.enums.ProductSerialStatus;
 import com.datn.pc_store.modules.goodsreceipt.repository.ProductSerialRepository;
-import com.datn.pc_store.modules.order.entity.Order;
 import com.datn.pc_store.modules.order.entity.OrderItem;
 import com.datn.pc_store.modules.order.entity.OrderItemSerial;
 import com.datn.pc_store.modules.order.repository.OrderItemRepository;
@@ -13,11 +14,16 @@ import com.datn.pc_store.modules.order.repository.OrderItemSerialRepository;
 import com.datn.pc_store.modules.order.repository.OrderRepository;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
+import com.datn.pc_store.modules.systemlog.dto.SystemLogCreateCommand;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogAction;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogModule;
+import com.datn.pc_store.modules.systemlog.event.SystemLogPublisher;
 import com.datn.pc_store.modules.user.entity.User;
 import com.datn.pc_store.modules.user.repository.UserRepository;
 import com.datn.pc_store.modules.warranty.dto.*;
 import com.datn.pc_store.modules.warranty.entity.*;
 import com.datn.pc_store.modules.warranty.enums.WarrantyPartStatus;
+import com.datn.pc_store.modules.warranty.enums.WarrantyPartType;
 import com.datn.pc_store.modules.warranty.enums.WarrantyRequestStatus;
 import com.datn.pc_store.modules.warranty.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +55,7 @@ public class AdminWarrantyService {
     private final BrandRepository brands;
     private final UserRepository users;
     private final WarrantyRequestService warrantyRequestService;
+    private final SystemLogPublisher systemLogPublisher;
 
     // ==================== 1. PRODUCT WARRANTIES ====================
 
@@ -136,7 +143,19 @@ public class AdminWarrantyService {
             w.setStatus(true);
         }
         Warranty saved = warranties.save(w);
-        return buildWarrantyResponse(saved, Instant.now());
+        AdminWarrantyResponse response = buildWarrantyResponse(saved, Instant.now());
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(SystemLogAction.UPDATE)
+                    .resourceType("WARRANTY")
+                    .resourceId(saved.getId())
+                    .resourceCode(response.serialNumber())
+                    .description("Gia hạn bảo hành thêm " + days + " ngày cho thiết bị " + response.serialNumber())
+                    .detailMap(Map.of("additionalDays", days, "newEndDate", saved.getEndDate().toString()))
+                    .build());
+        }
+        return response;
     }
 
     @Transactional
@@ -145,7 +164,18 @@ public class AdminWarrantyService {
                 .orElseThrow(() -> new ResourceNotFoundException("Bảo hành sản phẩm", "id", id));
         w.setStatus(false);
         Warranty saved = warranties.save(w);
-        return buildWarrantyResponse(saved, Instant.now());
+        AdminWarrantyResponse response = buildWarrantyResponse(saved, Instant.now());
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(SystemLogAction.UPDATE_STATUS)
+                    .resourceType("WARRANTY")
+                    .resourceId(saved.getId())
+                    .resourceCode(response.serialNumber())
+                    .description("Hủy hiệu lực bảo hành cho thiết bị " + response.serialNumber())
+                    .build());
+        }
+        return response;
     }
 
     // ==================== 2. WARRANTY REQUESTS & TECHNICAL ====================
@@ -207,6 +237,16 @@ public class AdminWarrantyService {
     public AdminWarrantyRequestResponse createRequest(WarrantyRequestCreateRequest input) {
         WarrantyRequestResponse res = warrantyRequestService.create(input);
         WarrantyRequest created = requests.findById(res.id()).orElseThrow();
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(SystemLogAction.CREATE)
+                    .resourceType("WARRANTY_REQUEST")
+                    .resourceId(created.getId())
+                    .resourceCode(created.getRequestCode())
+                    .description("Tiếp nhận phiếu yêu cầu bảo hành " + created.getRequestCode())
+                    .build());
+        }
         return buildRequestResponse(created);
     }
 
@@ -229,34 +269,267 @@ public class AdminWarrantyService {
             if (input.status() == WarrantyRequestStatus.COMPLETED) {
                 req.setCompletedAt(Instant.now());
                 List<WarrantyPart> reqParts = parts.findByWarrantyRequestId(requestId);
+
+                // Kiểm tra các linh kiện loại WARRANTY hoặc UPGRADE phải được gán đủ serial
+                for (WarrantyPart p : reqParts) {
+                    if ((p.getType() == WarrantyPartType.WARRANTY || p.getType() == WarrantyPartType.UPGRADE)
+                            && p.getStatus() == WarrantyPartStatus.PENDING) {
+                        throw new BadRequestException("Linh kiện ID " + p.getId() + " (" + p.getType()
+                                + ") chưa được thủ kho gán đủ serial để hoàn tất đóng ca.");
+                    }
+                }
+
                 for (WarrantyPart p : reqParts) {
                     if (p.getStatus() == WarrantyPartStatus.RESERVED || p.getStatus() == WarrantyPartStatus.PENDING) {
                         p.setStatus(WarrantyPartStatus.INSTALLED);
                         parts.save(p);
                     }
                 }
+
+                // Cập nhật trạng thái các serial liên quan sang SOLD (theo quyết định Q1)
+                List<Long> partIds = reqParts.stream().map(WarrantyPart::getId).collect(Collectors.toList());
+                if (!partIds.isEmpty()) {
+                    List<WarrantyPartSerial> links = partSerials.findByWarrantyPartIdIn(partIds);
+                    for (WarrantyPartSerial link : links) {
+                        productSerials.findById(link.getProductSerialId()).ifPresent(ps -> {
+                            ps.setStatus(ProductSerialStatus.SOLD);
+                            productSerials.save(ps);
+                        });
+                    }
+                }
+
+                // Cập nhật tổng chi phí khách phải trả
+                long totalCost = reqParts.stream().mapToLong(p -> p.getUnitCost() * p.getQuantity()).sum();
+                req.setTotalCost(totalCost);
+
+            } else if (input.status() == WarrantyRequestStatus.REJECTED) {
+                // Rollback toàn bộ serial đã giữ về IN_STOCK, hủy liên kết và chuyển part sang CANCELLED (theo quyết định Q3)
+                List<WarrantyPart> reqParts = parts.findByWarrantyRequestId(requestId);
+                List<Long> partIds = reqParts.stream().map(WarrantyPart::getId).collect(Collectors.toList());
+                if (!partIds.isEmpty()) {
+                    List<WarrantyPartSerial> links = partSerials.findByWarrantyPartIdIn(partIds);
+                    for (WarrantyPartSerial link : links) {
+                        productSerials.findById(link.getProductSerialId()).ifPresent(ps -> {
+                            if (ps.getStatus() == ProductSerialStatus.USING_BY_TECHNICAL) {
+                                ps.setStatus(ProductSerialStatus.IN_STOCK);
+                                productSerials.save(ps);
+                            }
+                        });
+                    }
+                    partSerials.deleteByWarrantyPartIdIn(partIds);
+                }
+
+                for (WarrantyPart p : reqParts) {
+                    p.setStatus(WarrantyPartStatus.CANCELLED);
+                    parts.save(p);
+                }
             }
         }
 
         WarrantyRequest saved = requests.save(req);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(input.status() != null ? SystemLogAction.UPDATE_STATUS : SystemLogAction.UPDATE)
+                    .resourceType("WARRANTY_REQUEST")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getRequestCode())
+                    .description("Cập nhật xử lý kỹ thuật phiếu bảo hành " + saved.getRequestCode())
+                    .detailMap(Map.of("status", saved.getStatus().name()))
+                    .build());
+        }
         return buildRequestResponse(saved);
     }
 
     @Transactional
-    public AdminWarrantyRequestResponse addPartToRequest(Long requestId, Long productId, int quantity, long unitCost) {
+    public AdminWarrantyRequestResponse addPartToRequest(
+            Long requestId,
+            WarrantyPartType type,
+            Long productId,
+            Integer quantity,
+            Integer warrantyCoveragePercent,
+            Long unitCost
+    ) {
         WarrantyRequest req = requests.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Phiếu bảo hành", "id", requestId));
+
+        if (req.getStatus() == WarrantyRequestStatus.COMPLETED || req.getStatus() == WarrantyRequestStatus.REJECTED) {
+            throw new BadRequestException("Không thể thêm linh kiện vào phiếu bảo hành đã hoàn tất hoặc bị từ chối.");
+        }
+
+        WarrantyPartType partType = type != null ? type : WarrantyPartType.WARRANTY;
+        Product product = null;
+        if (partType == WarrantyPartType.WARRANTY || partType == WarrantyPartType.UPGRADE) {
+            if (productId == null) {
+                throw new BadRequestException("Linh kiện loại " + partType + " bắt buộc phải chọn sản phẩm cụ thể.");
+            }
+            product = products.findById(productId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm linh kiện", "id", productId));
+        } else if (productId != null) {
+            product = products.findById(productId).orElse(null);
+        }
+
+        long originalPrice = product != null && product.getPrice() != null ? product.getPrice() : 0L;
+        int coverage = 0;
+        long finalUnitCost;
+
+        if (partType == WarrantyPartType.WARRANTY) {
+            coverage = warrantyCoveragePercent != null ? warrantyCoveragePercent : 100;
+            if (coverage < 0 || coverage > 100) {
+                throw new BadRequestException("Phần trăm bảo hành phải nằm trong khoảng 0 - 100%.");
+            }
+            long autoCost = Math.round(originalPrice * (1.0 - (coverage / 100.0)));
+            finalUnitCost = unitCost != null ? unitCost : autoCost;
+        } else if (partType == WarrantyPartType.UPGRADE) {
+            finalUnitCost = unitCost != null ? unitCost : originalPrice;
+        } else { // REPAIR
+            finalUnitCost = unitCost != null ? unitCost : 0L;
+        }
+
+        int qty = quantity != null && quantity > 0 ? quantity : 1;
+
         WarrantyPart part = new WarrantyPart();
         part.setWarrantyRequestId(requestId);
-        part.setProductId(productId != null ? productId : 1L);
-        part.setQuantity(quantity > 0 ? quantity : 1);
-        part.setUnitCost(unitCost >= 0 ? unitCost : 0L);
-        part.setStatus(WarrantyPartStatus.RESERVED);
+        part.setType(partType);
+        part.setProductId(productId);
+        part.setQuantity(qty);
+        part.setOriginalPrice(originalPrice);
+        part.setWarrantyCoveragePercent(coverage);
+        part.setUnitCost(finalUnitCost);
+        part.setStatus(WarrantyPartStatus.PENDING);
+
         parts.save(part);
+
+        // Cập nhật lại totalCost của phiếu
+        List<WarrantyPart> allParts = parts.findByWarrantyRequestId(requestId);
+        long grandTotal = allParts.stream().mapToLong(p -> p.getUnitCost() * p.getQuantity()).sum();
+        req.setTotalCost(grandTotal);
+        requests.save(req);
+
         return buildRequestResponse(req);
     }
 
-    // ==================== 3. SPARE PARTS ====================
+    // ==================== 3. GÁN SERIAL CHO LINH KIỆN TỪ KHO ====================
+
+    @Transactional
+    public AdminWarrantyRequestResponse assignSerialsToPart(Long requestId, Long partId, WarrantyPartAssignSerialsRequest req) {
+        WarrantyRequest warrantyReq = requests.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Phiếu bảo hành", "id", requestId));
+
+        if (warrantyReq.getStatus() == WarrantyRequestStatus.COMPLETED || warrantyReq.getStatus() == WarrantyRequestStatus.REJECTED) {
+            throw new BadRequestException("Phiếu bảo hành đã hoàn tất hoặc bị từ chối, không thể gán serial.");
+        }
+
+        WarrantyPart part = parts.findById(partId)
+                .orElseThrow(() -> new ResourceNotFoundException("Linh kiện bảo hành", "id", partId));
+
+        if (!Objects.equals(part.getWarrantyRequestId(), requestId)) {
+            throw new BadRequestException("Linh kiện không thuộc phiếu bảo hành này.");
+        }
+
+        if (part.getStatus() != WarrantyPartStatus.PENDING && part.getStatus() != WarrantyPartStatus.RESERVED) {
+            throw new BadRequestException("Chỉ có thể gán serial cho linh kiện ở trạng thái PENDING hoặc RESERVED.");
+        }
+
+        if (part.getProductId() == null) {
+            throw new BadRequestException("Linh kiện này không gắn sản phẩm cụ thể nên không cần gán serial kho.");
+        }
+
+        Set<Long> serialIds = new HashSet<>();
+        if (req.productSerialIds() != null && !req.productSerialIds().isEmpty()) {
+            serialIds.addAll(req.productSerialIds());
+        }
+        if (req.serialNumbers() != null && !req.serialNumbers().isEmpty()) {
+            for (String sn : req.serialNumbers()) {
+                if (sn != null && !sn.isBlank()) {
+                    productSerials.findFirstBySerialNumberAndIsTerminatedFalse(sn.trim())
+                            .ifPresent(ps -> serialIds.add(ps.getId()));
+                }
+            }
+        }
+
+        if (serialIds.size() != part.getQuantity()) {
+            throw new BadRequestException("Số lượng serial (" + serialIds.size() + ") phải khớp với số lượng linh kiện (" + part.getQuantity() + ").");
+        }
+
+        // Hoàn trả serial cũ nếu trước đó đã gán (để gán bộ serial mới)
+        List<WarrantyPartSerial> oldLinks = partSerials.findByWarrantyPartId(partId);
+        for (WarrantyPartSerial link : oldLinks) {
+            productSerials.findById(link.getProductSerialId()).ifPresent(ps -> {
+                if (ps.getStatus() == ProductSerialStatus.USING_BY_TECHNICAL) {
+                    ps.setStatus(ProductSerialStatus.IN_STOCK);
+                    productSerials.save(ps);
+                }
+            });
+        }
+        partSerials.deleteByWarrantyPartId(partId);
+
+        // Khóa bi quan và kiểm tra các serial mới
+        List<ProductSerial> locked = productSerials.lockByIds(serialIds);
+        if (locked.size() != serialIds.size()) {
+            throw new BadRequestException("Một số serial không tìm thấy trong hệ thống.");
+        }
+
+        for (ProductSerial ps : locked) {
+            if (ps.isTerminated() || ps.getStatus() != ProductSerialStatus.IN_STOCK
+                    || !Objects.equals(ps.getProductId(), part.getProductId())) {
+                throw new BadRequestException("Serial không hợp lệ hoặc không còn trong kho: " + ps.getSerialNumber());
+            }
+            ps.setStatus(ProductSerialStatus.USING_BY_TECHNICAL);
+            productSerials.save(ps);
+
+            var link = new WarrantyPartSerial();
+            link.setWarrantyPartId(part.getId());
+            link.setProductSerialId(ps.getId());
+            partSerials.save(link);
+        }
+
+        part.setStatus(WarrantyPartStatus.RESERVED);
+        parts.save(part);
+
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.WARRANTY)
+                    .action(SystemLogAction.ASSIGN_SERIAL)
+                    .resourceType("WARRANTY_REQUEST")
+                    .resourceId(warrantyReq.getId())
+                    .resourceCode(warrantyReq.getRequestCode())
+                    .description("Gán serial linh kiện thay thế cho phiếu bảo hành " + warrantyReq.getRequestCode())
+                    .detailMap(Map.of("partId", part.getId(), "serialCount", locked.size()))
+                    .build());
+        }
+
+        return buildRequestResponse(warrantyReq);
+    }
+
+    @Transactional
+    public AdminWarrantyRequestResponse removeSerialFromPart(Long requestId, Long partId, Long productSerialId) {
+        WarrantyRequest warrantyReq = requests.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Phiếu bảo hành", "id", requestId));
+        WarrantyPart part = parts.findById(partId)
+                .orElseThrow(() -> new ResourceNotFoundException("Linh kiện bảo hành", "id", partId));
+
+        var linkOpt = partSerials.findByWarrantyPartIdAndProductSerialId(partId, productSerialId);
+        if (linkOpt.isPresent()) {
+            partSerials.delete(linkOpt.get());
+            productSerials.findById(productSerialId).ifPresent(ps -> {
+                if (ps.getStatus() == ProductSerialStatus.USING_BY_TECHNICAL) {
+                    ps.setStatus(ProductSerialStatus.IN_STOCK);
+                    productSerials.save(ps);
+                }
+            });
+        }
+
+        List<WarrantyPartSerial> remaining = partSerials.findByWarrantyPartId(partId);
+        if (remaining.isEmpty()) {
+            part.setStatus(WarrantyPartStatus.PENDING);
+            parts.save(part);
+        }
+
+        return buildRequestResponse(warrantyReq);
+    }
+
+    // ==================== 4. SPARE PARTS ====================
 
     public PageResponse<AdminSparePartResponse> getAllSpareParts(String keyword, WarrantyPartStatus status, Pageable pageable) {
         List<WarrantyPart> all = parts.findAllOrderByCreatedDateDesc();
@@ -308,7 +581,7 @@ public class AdminWarrantyService {
         return buildSparePartResponse(saved);
     }
 
-    // ==================== 4. TIMELINE HISTORY ====================
+    // ==================== 5. TIMELINE HISTORY ====================
 
     public WarrantyHistoryResponse getWarrantyHistoryBySerial(String serialNumber) {
         String cleanSerial = serialNumber.trim();
@@ -366,16 +639,18 @@ public class AdminWarrantyService {
             if (!rParts.isEmpty()) {
                 String partsDesc = rParts.stream()
                         .map(p -> {
-                            String pName = products.findById(p.getProductId()).map(Product::getName).orElse("Linh kiện #" + p.getProductId());
-                            return pName + " (SL: " + p.getQuantity() + ")";
+                            String pName = p.getProductId() != null ?
+                                    products.findById(p.getProductId()).map(Product::getName).orElse("Linh kiện #" + p.getProductId())
+                                    : "Dịch vụ sửa chữa";
+                            return "[" + getPartTypeName(p.getType()) + "] " + pName + " (SL: " + p.getQuantity() + ")";
                         })
                         .collect(Collectors.joining("; "));
                 timeline.add(new WarrantyHistoryResponse.TimelineEvent(
                         "evt-part-" + r.getId(),
                         r.getLastModifiedDate() != null ? r.getLastModifiedDate() : r.getCreatedDate(),
-                        "Xuất linh kiện thay thế phục vụ sửa chữa",
+                        "Linh kiện & chi phí kỹ thuật",
                         partsDesc,
-                        "Kho linh kiện kỹ thuật",
+                        "Kho linh kiện & kỹ thuật",
                         "PARTS",
                         "cyan"
                 ));
@@ -402,7 +677,7 @@ public class AdminWarrantyService {
                         "evt-comp-" + r.getId(),
                         r.getCompletedAt() != null ? r.getCompletedAt() : Instant.now(),
                         "Bàn giao thiết bị cho khách hàng",
-                        "Phiếu bảo hành " + r.getRequestCode() + " đã hoàn tất đóng ca.",
+                        "Phiếu bảo hành " + r.getRequestCode() + " đã hoàn tất. Tổng thanh toán: " + String.format("%,d đ", r.getTotalCost()),
                         "Nhân viên dịch vụ khách hàng",
                         "COMPLETE",
                         "green"
@@ -428,6 +703,15 @@ public class AdminWarrantyService {
     }
 
     // ==================== HELPER BUILDERS ====================
+
+    private String getPartTypeName(WarrantyPartType type) {
+        if (type == null) return "Bảo hành";
+        return switch (type) {
+            case WARRANTY -> "Bảo hành";
+            case REPAIR -> "Sửa chữa tính phí";
+            case UPGRADE -> "Nâng cấp mua mới";
+        };
+    }
 
     private AdminWarrantyResponse buildWarrantyResponse(Warranty w, Instant now) {
         String serialNumber = "";
@@ -493,9 +777,9 @@ public class AdminWarrantyService {
         String policyName = "Chính sách tiêu chuẩn";
         int durationDays = 365;
         if (w.getWarrantyPolicyId() != null) {
-            Optional<WarrantPolicy> wpOpt = policies.findById(w.getWarrantyPolicyId());
+            Optional<WarrantyPolicy> wpOpt = policies.findById(w.getWarrantyPolicyId());
             if (wpOpt.isPresent()) {
-                WarrantPolicy wp = wpOpt.get();
+                WarrantyPolicy wp = wpOpt.get();
                 policyName = wp.getName();
                 durationDays = wp.getDurationDays();
             }
@@ -593,7 +877,7 @@ public class AdminWarrantyService {
 
         List<WarrantyPart> rParts = parts.findByWarrantyRequestId(r.getId());
         List<AdminWarrantyRequestResponse.Part> mappedParts = rParts.stream().map(p -> {
-            String pName = "Linh kiện thay thế";
+            String pName = "Dịch vụ sửa chữa";
             String pCode = "";
             if (p.getProductId() != null) {
                 Optional<Product> prodOpt = products.findById(p.getProductId());
@@ -612,11 +896,16 @@ public class AdminWarrantyService {
             return new AdminWarrantyRequestResponse.Part(
                     p.getId(),
                     p.getWarrantyRequestId(),
+                    p.getType(),
+                    getPartTypeName(p.getType()),
                     p.getProductId(),
                     pName,
                     pCode,
                     p.getQuantity(),
+                    p.getOriginalPrice(),
+                    p.getWarrantyCoveragePercent(),
                     p.getUnitCost(),
+                    p.getUnitCost() * p.getQuantity(),
                     p.getStatus(),
                     serialIds,
                     serialNums
@@ -647,6 +936,7 @@ public class AdminWarrantyService {
                 "MANUFACTURER",
                 r.getSolution(),
                 r.getStatus(),
+                r.getTotalCost(),
                 r.getCompletedAt(),
                 r.getCreatedDate(),
                 r.getLastModifiedDate(),
@@ -669,13 +959,15 @@ public class AdminWarrantyService {
             }
         }
 
-        String productName = "Linh kiện thay thế";
+        String productName = "Dịch vụ sửa chữa";
         String productCode = "";
+        String productCategory = "Dịch vụ";
         if (p.getProductId() != null) {
             Optional<Product> prodOpt = products.findById(p.getProductId());
             if (prodOpt.isPresent()) {
                 productName = prodOpt.get().getName();
                 productCode = prodOpt.get().getCode();
+                productCategory = "Linh kiện thay thế";
             }
         }
 
@@ -691,11 +983,15 @@ public class AdminWarrantyService {
                 p.getId(),
                 p.getWarrantyRequestId(),
                 requestCode,
+                p.getType(),
+                getPartTypeName(p.getType()),
                 p.getProductId(),
                 productName,
                 productCode,
-                "Linh kiện sửa chữa",
+                productCategory,
                 p.getQuantity(),
+                p.getOriginalPrice(),
+                p.getWarrantyCoveragePercent(),
                 p.getUnitCost(),
                 totalCost,
                 p.getStatus(),

@@ -2,9 +2,11 @@ package com.datn.pc_store.modules.goodsreceipt.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.common.exception.BadRequestException;
+import com.datn.pc_store.common.exception.ConflictException;
 import com.datn.pc_store.common.exception.DuplicateResourceException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
-import com.datn.pc_store.modules.auth.security.CustomUserDetails;
+import com.datn.pc_store.common.util.PaginationUtils;
+import com.datn.pc_store.common.util.SecurityUtils;
 import com.datn.pc_store.modules.goodsreceipt.dto.*;
 import com.datn.pc_store.modules.goodsreceipt.entity.GoodsReceipt;
 import com.datn.pc_store.modules.goodsreceipt.entity.ProductSerial;
@@ -16,12 +18,17 @@ import com.datn.pc_store.modules.goodsreceipt.repository.GoodsReceiptRepository;
 import com.datn.pc_store.modules.goodsreceipt.repository.ProductSerialRepository;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.product.repository.ProductRepository;
+import com.datn.pc_store.modules.product.service.ProductStockService;
 import com.datn.pc_store.modules.purchaseorder.entity.PurchaseOrder;
 import com.datn.pc_store.modules.purchaseorder.entity.PurchaseOrderItem;
 import com.datn.pc_store.modules.purchaseorder.enums.PurchaseOrderStatus;
 import com.datn.pc_store.modules.purchaseorder.repository.PurchaseOrderRepository;
 import com.datn.pc_store.modules.suppliers.entity.Supplier;
 import com.datn.pc_store.modules.suppliers.repository.SupplierRepository;
+import com.datn.pc_store.modules.systemlog.dto.SystemLogCreateCommand;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogAction;
+import com.datn.pc_store.modules.systemlog.enums.SystemLogModule;
+import com.datn.pc_store.modules.systemlog.event.SystemLogPublisher;
 import com.datn.pc_store.modules.user.entity.User;
 import com.datn.pc_store.modules.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
@@ -29,13 +36,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.*;
@@ -58,22 +63,19 @@ public class GoodsReceiptService {
     private final SupplierRepository supplierRepository;
     private final GoodsReceiptMapper goodsReceiptMapper;
     private final EntityManager entityManager;
+    private final SystemLogPublisher systemLogPublisher;
+    private final ProductStockService productStockService;
 
     @Transactional(readOnly = true)
     public PageResponse<GoodsReceiptResponse> getAllReceipts(String keyword, GoodsReceiptStatus status,
                                                             Long purchaseOrderId, Instant fromDate, Instant toDate,
                                                             Pageable pageable) {
-        validateDates(fromDate, toDate);
-        for (var sort : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(sort.getProperty())) {
-                throw new BadRequestException("Trường sắp xếp không hợp lệ: " + sort.getProperty()
-                        + ". Sử dụng sort=createdDate,desc hoặc bỏ tham số sort.");
-            }
-        }
+        PaginationUtils.validateDateRange(fromDate, toDate);
+        PaginationUtils.validateSort(pageable, SORTABLE_FIELDS);
 
-        boolean isAdmin = hasRole("ADMIN");
-        boolean isManager = hasRole("MANAGER");
-        boolean isWarehouse = hasRole("STAFF_WAREHOUSE");
+        boolean isAdmin = SecurityUtils.hasRole("ADMIN");
+        boolean isManager = SecurityUtils.hasRole("MANAGER");
+        boolean isWarehouse = SecurityUtils.hasRole("STAFF_WAREHOUSE");
 
         Long currentUserId = getCurrentUserId();
         int filterMode = 0; // 0: ADMIN (all)
@@ -329,6 +331,17 @@ public class GoodsReceiptService {
         attachItems(receipt, items);
         GoodsReceipt saved = goodsReceiptRepository.saveAndFlush(receipt);
         log.info("Đã tạo phiếu nhập hàng id: {} với trạng thái: {}", saved.getId(), saved.getStatus());
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.GOODS_RECEIPT)
+                    .action(SystemLogAction.CREATE)
+                    .resourceType("GOODS_RECEIPT")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getCode())
+                    .description("Tạo phiếu nhập kho " + saved.getCode() + " với trạng thái " + saved.getStatus())
+                    .detailMap(Map.of("purchaseOrderId", saved.getPurchaseOrderId(), "status", saved.getStatus().name()))
+                    .build());
+        }
         return goodsReceiptMapper.toResponse(saved);
     }
 
@@ -339,8 +352,8 @@ public class GoodsReceiptService {
 
         Long currentUserId = getCurrentUserId();
         if (receipt.getCreatedBy() != null && currentUserId != null
-                && !currentUserId.equals(receipt.getCreatedBy()) && !hasRole("ADMIN")) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo mới có thể chỉnh sửa phiếu nhập nháp.");
+                && !currentUserId.equals(receipt.getCreatedBy()) && !SecurityUtils.hasRole("ADMIN")) {
+            throw new AccessDeniedException("Chỉ người tạo mới có thể chỉnh sửa phiếu nhập nháp.");
         }
 
         String code = req.getCode().trim();
@@ -376,8 +389,8 @@ public class GoodsReceiptService {
             return goodsReceiptMapper.toResponse(receipt);
         }
 
-        boolean isAdmin = hasRole("ADMIN");
-        boolean isManager = hasRole("MANAGER");
+        boolean isAdmin = SecurityUtils.hasRole("ADMIN");
+        boolean isManager = SecurityUtils.hasRole("MANAGER");
         Long currentUserId = getCurrentUserId();
         Long createdBy = receipt.getCreatedBy();
 
@@ -407,14 +420,14 @@ public class GoodsReceiptService {
             case PENDING -> {
                 // Người tạo (hoặc Admin) chuyển từ DRAFT sang PENDING khi thực hiện gửi
                 if (createdBy != null && currentUserId != null && !currentUserId.equals(createdBy) && !isAdmin) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo mới có thể gửi duyệt phiếu nhập hàng (PENDING).");
+                    throw new AccessDeniedException("Chỉ người tạo mới có thể gửi duyệt phiếu nhập hàng (PENDING).");
                 }
                 validateItemsForPending(receipt.getItems());
             }
             case CANCELLED -> {
                 // "chỉ cho phép chuyển từ pending sang cancelled (người tạo tự chuyển)"
                 if (createdBy != null && currentUserId != null && !currentUserId.equals(createdBy) && !isAdmin) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo mới có quyền hủy phiếu nhập hàng (CANCELLED).");
+                    throw new AccessDeniedException("Chỉ người tạo mới có quyền hủy phiếu nhập hàng (CANCELLED).");
                 }
                 terminateAllSerials(receipt);
             }
@@ -422,7 +435,7 @@ public class GoodsReceiptService {
                 // "Từ PENDING sang CONFIRMED hoặc REJECTED:
                 // Chỉ role manager hoặc admin được chuyển, không bắt buộc chính mình không được tự chuyển (vì admin và manager có thể tự tạo và tự duyệt)"
                 if (!isAdmin && !isManager) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản lý (MANAGER) hoặc Quản trị viên (ADMIN) mới có quyền xác nhận hoặc từ chối phiếu nhập hàng.");
+                    throw new AccessDeniedException("Chỉ Quản lý (MANAGER) hoặc Quản trị viên (ADMIN) mới có quyền xác nhận hoặc từ chối phiếu nhập hàng.");
                 }
 
                 if (target == GoodsReceiptStatus.CONFIRMED) {
@@ -454,7 +467,28 @@ public class GoodsReceiptService {
 
         receipt.setStatus(target);
         GoodsReceipt saved = goodsReceiptRepository.saveAndFlush(receipt);
+        if (target == GoodsReceiptStatus.CONFIRMED && productStockService != null) {
+            Set<Long> confirmedProductIds = saved.getItems().stream()
+                    .flatMap(item -> item.getProductSerials().stream())
+                    .filter(ps -> ps.getStatus() == ProductSerialStatus.IN_STOCK)
+                    .map(ProductSerial::getProductId)
+                    .collect(Collectors.toSet());
+            if (!confirmedProductIds.isEmpty()) {
+                productStockService.syncProductStockStatus(confirmedProductIds);
+            }
+        }
         log.info("Chuyển trạng thái phiếu nhập hàng id: {} từ {} sang {}", id, current, target);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.GOODS_RECEIPT)
+                    .action(SystemLogAction.UPDATE_STATUS)
+                    .resourceType("GOODS_RECEIPT")
+                    .resourceId(saved.getId())
+                    .resourceCode(saved.getCode())
+                    .description("Chuyển trạng thái phiếu nhập kho " + saved.getCode() + " từ " + current + " sang " + target)
+                    .detailMap(Map.of("oldStatus", current.name(), "newStatus", target.name()))
+                    .build());
+        }
         return goodsReceiptMapper.toResponse(saved);
     }
 
@@ -469,16 +503,27 @@ public class GoodsReceiptService {
 
         Long currentUserId = getCurrentUserId();
         if (receipt.getCreatedBy() != null && currentUserId != null
-                && !currentUserId.equals(receipt.getCreatedBy()) && !hasRole("ADMIN")) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ người tạo mới có quyền xóa phiếu nhập nháp.");
+                && !currentUserId.equals(receipt.getCreatedBy()) && !SecurityUtils.hasRole("ADMIN")) {
+            throw new AccessDeniedException("Chỉ người tạo mới có quyền xóa phiếu nhập nháp.");
         }
 
+        String receiptCode = receipt.getCode();
         // "Khi xóa ở trạng thái draft sẽ là xóa cứng (xóa hẳn khỏi hệ thống từ goodRecepit, receiptItem, product_serial)."
         // Nhờ CascadeType.ALL và orphanRemoval = true trên cả goodsReceipt -> items và item -> productSerials,
         // toàn bộ receipt, receipt_items và product_serials sẽ được xóa sạch khỏi cơ sở dữ liệu.
         goodsReceiptRepository.delete(receipt);
         goodsReceiptRepository.flush();
         log.info("Đã xóa cứng phiếu nhập hàng nháp id: {}", id);
+        if (systemLogPublisher != null) {
+            systemLogPublisher.publish(SystemLogCreateCommand.builder()
+                    .module(SystemLogModule.GOODS_RECEIPT)
+                    .action(SystemLogAction.DELETE)
+                    .resourceType("GOODS_RECEIPT")
+                    .resourceId(id)
+                    .resourceCode(receiptCode)
+                    .description("Xóa phiếu nhập kho nháp " + receiptCode)
+                    .build());
+        }
     }
 
     private void terminateAllSerials(GoodsReceipt receipt) {
@@ -490,9 +535,9 @@ public class GoodsReceiptService {
     }
 
     private void validateReadPermission(GoodsReceipt receipt) {
-        boolean isAdmin = hasRole("ADMIN");
-        boolean isManager = hasRole("MANAGER");
-        boolean isWarehouse = hasRole("STAFF_WAREHOUSE");
+        boolean isAdmin = SecurityUtils.hasRole("ADMIN");
+        boolean isManager = SecurityUtils.hasRole("MANAGER");
+        boolean isWarehouse = SecurityUtils.hasRole("STAFF_WAREHOUSE");
 
         if (isAdmin) {
             return;
@@ -763,36 +808,20 @@ public class GoodsReceiptService {
         }
     }
 
-    private void validateDates(Instant start, Instant end) {
-        if (start != null && end != null && end.isBefore(start)) {
-            throw new BadRequestException("Thời gian kết thúc không được trước thời gian bắt đầu.");
-        }
-    }
-
-    private Authentication getAuthentication() {
-        return SecurityContextHolder.getContext().getAuthentication();
-    }
-
     private Long getCurrentUserId() {
-        Authentication auth = getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) return null;
-        if (auth.getPrincipal() instanceof CustomUserDetails principal) {
-            return principal.getId();
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId != null) {
+            return userId;
         }
-        if (auth.getPrincipal() instanceof UserDetails ud) {
-            return userRepository.findByUsername(ud.getUsername()).map(User::getId).orElse(null);
-        }
-        return null;
+        return SecurityUtils.getCurrentAuthentication()
+                .map(Authentication::getPrincipal)
+                .filter(UserDetails.class::isInstance)
+                .map(UserDetails.class::cast)
+                .flatMap(ud -> userRepository.findByUsername(ud.getUsername()).map(User::getId))
+                .orElse(null);
     }
 
-    private boolean hasRole(String role) {
-        Authentication auth = getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) return false;
-        String target = "ROLE_" + role;
-        return auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals(target));
-    }
-
-    private ResponseStatusException conflict(String message) {
-        return new ResponseStatusException(HttpStatus.CONFLICT, message);
+    private ConflictException conflict(String message) {
+        return new ConflictException(message);
     }
 }

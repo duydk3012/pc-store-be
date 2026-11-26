@@ -1,6 +1,7 @@
 package com.datn.pc_store.modules.delivery.controller;
 
 import com.datn.pc_store.common.dto.PageResponse;
+import com.datn.pc_store.common.util.SecurityUtils;
 import com.datn.pc_store.modules.delivery.dto.DeliveryCreateRequest;
 import com.datn.pc_store.modules.delivery.dto.DeliveryMetadataUpdateRequest;
 import com.datn.pc_store.modules.delivery.dto.DeliveryResponse;
@@ -8,7 +9,6 @@ import com.datn.pc_store.modules.delivery.dto.DeliveryStatusUpdateRequest;
 import com.datn.pc_store.modules.delivery.enums.DeliveryResourceType;
 import com.datn.pc_store.modules.delivery.enums.DeliveryStatus;
 import com.datn.pc_store.modules.delivery.service.DeliveryService;
-import com.datn.pc_store.modules.auth.security.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,8 +20,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -37,7 +35,7 @@ public class DeliveryController {
     @PostMapping
     @Operation(summary = "Tạo vận đơn khi nhân viên bàn giao hàng cho đơn vị vận chuyển")
     public ResponseEntity<DeliveryResponse> create(@Valid @RequestBody DeliveryCreateRequest request) {
-        DeliveryResponse delivery = deliveryService.create(request, getCurrentUserId());
+        DeliveryResponse delivery = deliveryService.create(request, SecurityUtils.getCurrentUserId());
         return ResponseEntity.created(URI.create("/api/deliveries/" + delivery.getId())).body(delivery);
     }
 
@@ -76,7 +74,7 @@ public class DeliveryController {
             @PathVariable Long id,
             @Valid @RequestBody DeliveryMetadataUpdateRequest request
     ) {
-        return ResponseEntity.ok(deliveryService.updateMetadata(id, request, getCurrentUserId()));
+        return ResponseEntity.ok(deliveryService.updateMetadata(id, request, SecurityUtils.getCurrentUserId()));
     }
 
     @PatchMapping("/{id}/status")
@@ -85,14 +83,6 @@ public class DeliveryController {
             @PathVariable Long id,
             @Valid @RequestBody DeliveryStatusUpdateRequest request
     ) {
-        return ResponseEntity.ok(deliveryService.updateStatus(id, request.getStatus(), getCurrentUserId()));
-    }
-
-    private Long getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof CustomUserDetails userDetails) {
-            return userDetails.getId();
-        }
-        return null;
+        return ResponseEntity.ok(deliveryService.updateStatus(id, request.getStatus(), SecurityUtils.getCurrentUserId()));
     }
 }

@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import com.datn.pc_store.modules.user.enums.RoleType;
 import com.datn.pc_store.modules.user.enums.UserStatus;
 import org.springframework.stereotype.Repository;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -45,5 +46,28 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("role") RoleType role,
             @Param("status") UserStatus status,
             Pageable pageable
+    );
+
+    @Query("""
+        SELECT u.role, COUNT(u.id)
+        FROM User u
+        WHERE (:status IS NULL OR u.status = :status)
+          AND (:role IS NULL OR u.role = :role)
+        GROUP BY u.role
+    """)
+    List<Object[]> countUsersByRoleGrouped(
+            @Param("role") RoleType role,
+            @Param("status") UserStatus status
+    );
+
+    @Query("""
+        SELECT COUNT(u.id)
+        FROM User u
+        WHERE (:status IS NULL OR u.status = :status)
+          AND (:role IS NULL OR u.role = :role)
+    """)
+    long countUsers(
+            @Param("role") RoleType role,
+            @Param("status") UserStatus status
     );
 }

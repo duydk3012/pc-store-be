@@ -2,7 +2,7 @@ package com.datn.pc_store.modules.comment.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
 import com.datn.pc_store.common.exception.*;
-import com.datn.pc_store.modules.auth.security.CustomUserDetails;
+import com.datn.pc_store.common.util.SecurityUtils;
 import com.datn.pc_store.modules.comment.dto.*;
 import com.datn.pc_store.modules.comment.entity.ProductComment;
 import com.datn.pc_store.modules.comment.repository.ProductCommentRepository;
@@ -11,7 +11,6 @@ import com.datn.pc_store.modules.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Objects;
@@ -33,17 +32,9 @@ public class CommentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bình luận"));
     }
 
-    private CustomUserDetails actor() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || !(auth.getPrincipal() instanceof CustomUserDetails user)) {
-            throw new AccessDeniedException("Yêu cầu đăng nhập");
-        }
-        return user;
-    }
-
     private void requireOwner(ProductComment c, boolean allowAdmin) {
-        var user = actor();
-        boolean admin = user.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        var user = SecurityUtils.requireCurrentUser();
+        boolean admin = SecurityUtils.hasRole("ADMIN");
         if (!Objects.equals(c.getCreatedBy(), user.getId()) && !(allowAdmin && admin)) {
             throw new AccessDeniedException("Bạn không có quyền thay đổi bình luận này");
         }
@@ -65,7 +56,7 @@ public class CommentService {
 
     @Transactional
     public CommentResponse create(Long productId, Long parentId, CommentRequest request) {
-        var user = actor();
+        var user = SecurityUtils.requireCurrentUser();
         checkProduct(productId);
         if (parentId != null && find(productId, parentId).isDeleted()) {
             throw new BadRequestException("Không thể trả lời bình luận đã xóa");

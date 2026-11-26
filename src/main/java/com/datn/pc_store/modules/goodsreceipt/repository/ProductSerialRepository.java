@@ -36,6 +36,19 @@ public interface ProductSerialRepository extends JpaRepository<ProductSerial, Lo
 
     List<ProductSerial> findAllByIdIn(Collection<Long> ids);
 
+    @Query("""
+        SELECT ps.productId, COUNT(ps.id)
+        FROM ProductSerial ps
+        WHERE ps.productId IN :productIds
+          AND ps.status = :status
+          AND ps.isTerminated = false
+        GROUP BY ps.productId
+    """)
+    List<Object[]> countActiveSerialsByProductIdsAndStatus(
+            @Param("productIds") Collection<Long> productIds,
+            @Param("status") ProductSerialStatus status
+    );
+
     @Query("SELECT ps.serialNumber FROM ProductSerial ps WHERE ps.serialNumber IN :serialNumbers AND ps.isTerminated = false")
     Set<String> findActiveExistingSerialNumbers(@Param("serialNumbers") Collection<String> serialNumbers);
 

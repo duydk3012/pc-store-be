@@ -5,6 +5,8 @@ import com.datn.pc_store.modules.order.dto.OrderResponse;
 import com.datn.pc_store.modules.order.entity.Order;
 import com.datn.pc_store.modules.order.entity.OrderItem;
 import com.datn.pc_store.modules.order.util.OrderAddressHelper;
+import com.datn.pc_store.modules.payment.entity.Payment;
+import com.datn.pc_store.modules.payment.entity.PaymentMethodEntity;
 import com.datn.pc_store.modules.product.entity.Product;
 import com.datn.pc_store.modules.user.entity.User;
 import org.springframework.stereotype.Component;
@@ -18,10 +20,14 @@ import java.util.Map;
 public class OrderMapper {
 
     public OrderResponse toResponse(Order order) {
-        return toResponse(order, Collections.emptyMap());
+        return toResponse(order, Collections.emptyMap(), null);
     }
 
     public OrderResponse toResponse(Order order, Map<Long, List<String>> itemSerialMap) {
+        return toResponse(order, itemSerialMap, null);
+    }
+
+    public OrderResponse toResponse(Order order, Map<Long, List<String>> itemSerialMap, Payment payment) {
         if (order == null) return null;
 
         User user = order.getUser();
@@ -44,6 +50,8 @@ public class OrderMapper {
             }
         }
 
+        PaymentMethodEntity pm = payment != null ? payment.getPaymentMethod() : null;
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .code(order.getCode())
@@ -61,6 +69,11 @@ public class OrderMapper {
                 .discountAmount(order.getDiscountAmount())
                 .finalAmount(order.getFinalAmount())
                 .status(order.getStatus())
+                .paymentMethod(pm != null ? pm.getCode() : null)
+                .paymentMethodName(pm != null ? pm.getName() : null)
+                .paymentStatus(payment != null ? payment.getStatus() : null)
+                .transactionCode(payment != null ? payment.getTransactionCode() : null)
+                .paidAt(payment != null ? payment.getPaidAt() : null)
                 .items(itemResponses)
                 .createdDate(order.getCreatedDate())
                 .createdBy(order.getCreatedBy())
