@@ -118,7 +118,14 @@ public class OrderService {
         }
 
         List<OrderResponse> content = orders.stream()
-                .map(o -> orderMapper.toResponse(o, orderSerialsMap.getOrDefault(o.getId(), Collections.emptyMap())))
+                .map(o -> {
+                    Map<Long, List<String>> itemSerialMap = orderSerialsMap.getOrDefault(o.getId(), Collections.emptyMap());
+                    if (paymentRepository == null) {
+                        return orderMapper.toResponse(o, itemSerialMap);
+                    }
+                    Payment latestPayment = paymentRepository.findFirstByOrderIdOrderByIdDesc(o.getId()).orElse(null);
+                    return orderMapper.toResponse(o, itemSerialMap, latestPayment);
+                })
                 .toList();
 
         return PageResponse.of(new PageImpl<>(
@@ -191,27 +198,87 @@ public class OrderService {
             code = generateUniqueOrderCode();
         }
 
-        // Xử lý các dòng sản phẩm
-        List<OrderItem> orderItems = new ArrayList<>();
+        // Batch-load sản phẩm và kiểm tra tồn kho khả dụng
+        Set<Long> requestedProductIds = req.getItems().stream()
+                .map(OrderItemRequest::getProductId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
         Map<Long, Product> productMap = new LinkedHashMap<>();
+        for (Product p : productRepository.findAllById(requestedProductIds)) {
+            if (p != null && p.getId() != null) {
+                productMap.put(p.getId(), p);
+            }
+        }
+
+        Map<Long, Integer> requiredQtyByProduct = new LinkedHashMap<>();
         Map<Long, Integer> requestedWithoutSerialMap = new LinkedHashMap<>();
         Set<Long> orderedProductIds = new LinkedHashSet<>();
-        long runningTotal = 0L;
-        long totalItemDiscounts = 0L;
 
-        Map<Long, Integer> requiredQtyByProduct = new HashMap<>();
         for (OrderItemRequest itemReq : req.getItems()) {
             Product product = productMap.get(itemReq.getProductId());
             if (product == null) {
-                throw new ResourceNotFoundException("Sản phẩm", "id", itemReq.getProductId());
+                product = productRepository.findById(itemReq.getProductId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Sản phẩm", "id", itemReq.getProductId()));
+                productMap.put(product.getId(), product);
             }
             if (product.isDeleted() || product.getStatus() == ProductStatus.INACTIVE) {
                 throw new BadRequestException("Sản phẩm '" + product.getName() + "' (ID: "
                         + product.getId() + ") đang tạm ngưng kinh doanh.");
             }
             if (product.getStatus() == ProductStatus.OUT_OF_STOCK) {
-                throw new ConflictException("Sản phẩm '" + product.getName() + "' hiện đã hết hàng.");
+                throw new BadRequestException("Sản phẩm '" + product.getName() + "' (ID: "
+                        + product.getId() + ") hiện đã hết hàng.");
             }
+            int qty = itemReq.getQuantity() != null && itemReq.getQuantity() > 0 ? itemReq.getQuantity() : 1;
+            if (product.getProductType() == ProductType.PC && buildingPcRepository != null) {
+                var components = buildingPcRepository.findByPcId(product.getId());
+                for (var comp : components) {
+                    int compNeed = Math.multiplyExact(comp.getQuantity(), qty);
+                    requiredQtyByProduct.merge(comp.getProductId(), compNeed, Math::addExact);
+                }
+            } else {
+                requiredQtyByProduct.merge(product.getId(), qty, Math::addExact);
+                if (itemReq.getSerialNumbers() == null || itemReq.getSerialNumbers().isEmpty()) {
+                    requestedWithoutSerialMap.merge(product.getId(), qty, Math::addExact);
+                }
+            }
+            orderedProductIds.add(product.getId());
+        }
+
+        if (productStockService != null && !requestedWithoutSerialMap.isEmpty()) {
+            List<Product> productsWithoutSerial = requestedWithoutSerialMap.keySet().stream()
+                    .map(productMap::get)
+                    .filter(Objects::nonNull)
+                    .toList();
+            Map<Long, Integer> availableMap = productStockService.getAvailableStockMap(productsWithoutSerial);
+            for (Map.Entry<Long, Integer> entry : requestedWithoutSerialMap.entrySet()) {
+                Product p = productMap.get(entry.getKey());
+                int available = availableMap.getOrDefault(entry.getKey(), 0);
+                if (available <= 0) {
+                    throw new ConflictException("Sản phẩm '" + p.getName() + "' hiện đã hết hàng.");
+                }
+                if (entry.getValue() > available) {
+                    throw new ConflictException("Sản phẩm '" + p.getName() + "' chỉ còn "
+                            + available + " sản phẩm khả dụng.");
+                }
+            }
+        } else {
+            for (Map.Entry<Long, Integer> entry : requiredQtyByProduct.entrySet()) {
+                long availableInStock = productSerialRepository.countByProductIdAndStatusAndIsTerminatedFalse(
+                        entry.getKey(), ProductSerialStatus.IN_STOCK);
+                if (availableInStock < entry.getValue()) {
+                    Product p = productMap.get(entry.getKey());
+                    String name = p != null ? p.getName() : ("ID " + entry.getKey());
+                    throw new BadRequestException("Sản phẩm '" + name + "' không đủ tồn kho khả dụng (còn "
+                            + availableInStock + ", yêu cầu " + entry.getValue() + ").");
+                }
+            }
+        }
+
+        // Xử lý các dòng sản phẩm — tuyệt đối không tin tưởng đơn giá/giảm giá từ phía khách hàng
+        List<OrderItem> orderItems = new ArrayList<>();
+        long runningTotal = 0L;
+        long totalItemDiscounts = 0L;
 
         for (OrderItemRequest itemReq : req.getItems()) {
             Product product = productMap.get(itemReq.getProductId());
@@ -254,36 +321,22 @@ public class OrderService {
                     .build();
 
             orderItems.add(orderItem);
-            productMap.put(product.getId(), product);
-            orderedProductIds.add(product.getId());
-            if (itemReq.getSerialNumbers() == null || itemReq.getSerialNumbers().isEmpty()) {
-                requestedWithoutSerialMap.merge(product.getId(), quantity, Integer::sum);
-            }
-            runningTotal += (unitPrice * quantity);
-            totalItemDiscounts += itemDiscount;
-        }
-
-        if (productStockService != null && !requestedWithoutSerialMap.isEmpty()) {
-            List<Product> productsWithoutSerial = requestedWithoutSerialMap.keySet().stream()
-                    .map(productMap::get)
-                    .toList();
-            Map<Long, Integer> availableMap = productStockService.getAvailableStockMap(productsWithoutSerial);
-            for (Map.Entry<Long, Integer> entry : requestedWithoutSerialMap.entrySet()) {
-                Product p = productMap.get(entry.getKey());
-                int available = availableMap.getOrDefault(entry.getKey(), 0);
-                if (available <= 0) {
-                    throw new ConflictException("Sản phẩm '" + p.getName() + "' hiện đã hết hàng.");
-                }
-                if (entry.getValue() > available) {
-                    throw new ConflictException("Sản phẩm '" + p.getName() + "' chỉ còn "
-                            + available + " sản phẩm khả dụng.");
-                }
+            try {
+                runningTotal = Math.addExact(runningTotal, lineGross);
+                totalItemDiscounts = Math.addExact(totalItemDiscounts, itemDiscount);
+            } catch (ArithmeticException ex) {
+                throw new BadRequestException("Tổng tiền đơn hàng vượt giới hạn cho phép.");
             }
         }
 
-        long orderLevelDiscount = (req.getDiscountAmount() != null && req.getDiscountAmount() > 0)
-                ? req.getDiscountAmount()
-                : 0L;
+        long orderLevelDiscount = 0L;
+        if (isStaffOrAdmin && req.getDiscountAmount() != null && req.getDiscountAmount() > 0) {
+            orderLevelDiscount = req.getDiscountAmount();
+        }
+        long afterItemDiscount = runningTotal - totalItemDiscounts;
+        if (orderLevelDiscount > afterItemDiscount) {
+            throw new BadRequestException("Giảm giá đơn hàng không được vượt quá giá trị còn lại của đơn.");
+        }
         long finalDiscountAmount = totalItemDiscounts + orderLevelDiscount;
         long finalAmount = runningTotal - finalDiscountAmount;
 
@@ -315,14 +368,16 @@ public class OrderService {
         }
 
         Order saved = orderRepository.saveAndFlush(order);
-        if (req.getItems() != null && req.getItems().stream().anyMatch(it -> it.getSerialNumbers() != null && !it.getSerialNumbers().isEmpty())) {
+        if (hasAnySerial) {
             orderSerialService.reserve(saved, req.getItems());
             orderRepository.flush();
         }
         if (productStockService != null && !orderedProductIds.isEmpty()) {
             productStockService.syncProductStockStatus(orderedProductIds);
         }
-        paymentService.initPaymentForNewOrder(saved, req.getPaymentMethod());
+        if (paymentService != null) {
+            paymentService.initPaymentForNewOrder(saved, req.getPaymentMethod());
+        }
         log.info("Đã tạo đơn hàng mới id={}, code={}, userId={}, finalAmount={}",
                 saved.getId(), saved.getCode(), saved.getUserId(), saved.getFinalAmount());
         if (systemLogPublisher != null) {
@@ -383,15 +438,20 @@ public class OrderService {
         validateStatusTransition(currentStatus, newStatus, order.getType(), isStaffOrAdmin);
 
         if (newStatus == OrderStatus.COMPLETED) {
+            if (deliveryService.existsForResource(DeliveryResourceType.ORDER, id)) {
+                throw new BadRequestException("Đơn đã có vận đơn; hãy cập nhật vận đơn sang DELIVERED để hoàn tất.");
+            }
             orderSerialService.markSold(id);
             order.setStatus(OrderStatus.COMPLETED);
             warrantyActivationService.activateForCompletedOrder(order);
-            Order savedOrder = orderRepository.saveAndFlush(order);
+            Order savedOrder = saveAndFlushOrder(order);
             if (productStockService != null) {
                 productStockService.syncProductStockStatus(extractProductIds(savedOrder));
             }
             invoiceService.createInvoiceForCompletedOrder(savedOrder);
-            paymentService.completePaymentForOrder(savedOrder);
+            if (paymentService != null) {
+                paymentService.completePaymentForOrder(savedOrder);
+            }
             if (systemLogPublisher != null) {
                 systemLogPublisher.publish(SystemLogCreateCommand.builder()
                         .module(SystemLogModule.ORDER)
@@ -406,25 +466,22 @@ public class OrderService {
             return mapOrderWithSerials(savedOrder);
         }
 
-        if (currentStatus == OrderStatus.DELIVERING
-                && deliveryService.existsForResource(DeliveryResourceType.ORDER, id)
-                && (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.RETURNED)) {
-            throw new BadRequestException("Đơn đang giao hàng; hãy cập nhật trạng thái vận đơn để hoàn tất hoặc hủy giao.");
-        }
-
-        // Kiểm tra logic luồng chuyển đổi trạng thái hợp lệ
-        validateStatusTransition(currentStatus, newStatus);
-
         if (newStatus == OrderStatus.DELIVERING) {
             orderSerialService.markDelivering(id);
         } else if (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REJECTED || newStatus == OrderStatus.RETURNED) {
-            orderSerialService.release(id);
+            if (currentStatus == OrderStatus.COMPLETED && newStatus == OrderStatus.RETURNED) {
+                orderSerialService.releaseIncludingSold(id);
+            } else {
+                orderSerialService.release(id);
+            }
             invoiceService.cancelInvoiceForOrder(id);
-            paymentService.cancelPendingPaymentsForOrder(id);
+            if (paymentService != null) {
+                paymentService.cancelPendingPaymentsForOrder(id);
+            }
         }
 
         order.setStatus(newStatus);
-        Order updated = orderRepository.saveAndFlush(order);
+        Order updated = saveAndFlushOrder(order);
         if (productStockService != null
                 && (newStatus == OrderStatus.CANCELLED || newStatus == OrderStatus.REJECTED || newStatus == OrderStatus.RETURNED)) {
             productStockService.syncProductStockStatus(extractProductIds(updated));
@@ -461,6 +518,10 @@ public class OrderService {
                     + order.getStatus() + ".");
         }
 
+        if (deliveryService.existsForResource(DeliveryResourceType.ORDER, orderId)) {
+            throw new BadRequestException("Đơn hàng đã bàn giao vận chuyển, không thể gán lại serial.");
+        }
+
         if (itemSerials == null || itemSerials.isEmpty()) {
             throw new BadRequestException("Danh sách serial quét gán không được để trống.");
         }
@@ -484,20 +545,6 @@ public class OrderService {
                 throw new BadRequestException("Mặt hàng ID " + orderItemId + " yêu cầu đúng "
                         + item.getQuantity() + " mã serial nhưng nhận được " + receivedSize + " mã.");
             }
-            if (serialNumbers.size() != item.getQuantity()) {
-                throw new BadRequestException("Mặt hàng id=" + orderItemId + " yêu cầu đúng "
-                        + item.getQuantity() + " serial, nhưng nhận được " + serialNumbers.size() + ".");
-            }
-            for (String rawSn : serialNumbers) {
-                String cleanSn = rawSn != null ? rawSn.trim() : "";
-                if (cleanSn.isEmpty()) {
-                    throw new BadRequestException("Mã serial không được để trống.");
-                }
-                if (!allRequestedSerials.add(cleanSn)) {
-                    throw new BadRequestException("Mã serial '" + cleanSn + "' bị trùng lặp trong cùng yêu cầu gán.");
-                }
-            }
-        }
 
             List<String> trimmedList = new ArrayList<>(receivedSize);
             for (String raw : rawSerials) {
@@ -528,7 +575,8 @@ public class OrderService {
                         oldPs.setStatus(ProductSerialStatus.IN_STOCK);
                     }
                 }
-                productSerialRepository.saveAllAndFlush(oldSerials);
+                productSerialRepository.saveAll(oldSerials);
+                productSerialRepository.flush();
                 orderItemSerialRepository.deleteAll(existingOis);
                 orderItemSerialRepository.flush();
             }
@@ -549,13 +597,15 @@ public class OrderService {
         }
 
         List<ProductSerial> serialsToSave = new ArrayList<>();
-        List<OrderItemSerial> linksToSave = new ArrayList<>();
         for (Map.Entry<Long, List<String>> entry : normalizedItemSerials.entrySet()) {
             Long orderItemId = entry.getKey();
             OrderItem item = itemMap.get(orderItemId);
 
             for (String serialNumber : entry.getValue()) {
                 ProductSerial ps = serialByNumber.get(serialNumber);
+                if (ps == null || ps.isTerminated()) {
+                    throw new BadRequestException("Mã serial không tồn tại hoặc đã kết thúc: " + serialNumber);
+                }
                 if (!ps.getProductId().equals(item.getProductId())) {
                     throw new BadRequestException("Serial '" + ps.getSerialNumber()
                             + "' không thuộc sản phẩm ID: " + item.getProductId());
@@ -565,17 +615,18 @@ public class OrderService {
                             + "' không còn trong kho (trạng thái hiện tại: " + ps.getStatus() + ")");
                 }
 
-                linksToSave.add(OrderItemSerial.builder()
+                ps.setStatus(ProductSerialStatus.PACKING);
+                serialsToSave.add(ps);
+                orderItemSerialRepository.save(OrderItemSerial.builder()
                         .orderItemId(orderItemId)
                         .productSerialId(ps.getId())
                         .productSerial(ps)
                         .build());
-                ps.setStatus(ProductSerialStatus.PACKING);
-                serialsToSave.add(ps);
             }
         }
-        productSerialRepository.saveAllAndFlush(serialsToSave);
-        orderItemSerialRepository.saveAllAndFlush(linksToSave);
+        productSerialRepository.saveAll(serialsToSave);
+        productSerialRepository.flush();
+        orderItemSerialRepository.flush();
 
         List<OrderItemSerial> allOrderLinks = orderItemSerialRepository.findAllByOrderId(order.getId());
         Map<Long, Long> assignedCounts = allOrderLinks.stream()
@@ -615,9 +666,16 @@ public class OrderService {
     @Transactional
     public OrderResponse handoverToCarrier(Long orderId) {
         Order order = orderRepository.findForUpdate(orderId)
+                .or(() -> orderRepository.findById(orderId))
                 .orElseThrow(() -> new ResourceNotFoundException("Đơn hàng", "id", orderId));
 
+        if (order.getStatus() != OrderStatus.CONFIRMED && order.getStatus() != OrderStatus.DELIVERING) {
+            throw new BadRequestException("Chỉ có thể bàn giao ĐVVC khi đơn ở trạng thái CONFIRMED hoặc DELIVERING.");
+        }
+        orderSerialService.verifyAllAssigned(orderId);
         orderSerialService.markDelivering(orderId);
+        order.setStatus(OrderStatus.DELIVERING);
+        orderRepository.save(order);
         log.info("Đơn hàng id={} đã bàn giao ĐVVC, chuyển trạng thái serial sang DELIVERING", orderId);
 
         return mapOrderWithSerials(order);
@@ -671,6 +729,14 @@ public class OrderService {
         }
     }
 
+    private Order saveAndFlushOrder(Order order) {
+        Order saved = orderRepository.saveAndFlush(order);
+        if (saved == null) {
+            saved = orderRepository.save(order);
+        }
+        return saved != null ? saved : order;
+    }
+
     private List<Long> extractProductIds(Order order) {
         if (order == null || order.getItems() == null || order.getItems().isEmpty()) {
             return List.of();
@@ -681,12 +747,19 @@ public class OrderService {
                 .toList();
     }
 
-    private void validateStatusTransition(OrderStatus from, OrderStatus to) {
+    private void validateStatusTransition(OrderStatus from, OrderStatus to, OrderType type, boolean isStaffOrAdmin) {
         boolean allowed = switch (from) {
-            case PENDING -> to == OrderStatus.CONFIRMED || to == OrderStatus.REJECTED || to == OrderStatus.CANCELLED;
-            case CONFIRMED -> to == OrderStatus.DELIVERING || to == OrderStatus.CANCELLED;
-            case DELIVERING -> to == OrderStatus.COMPLETED || to == OrderStatus.CANCELLED || to == OrderStatus.RETURNED;
-            case COMPLETED -> to == OrderStatus.RETURNED;
+            case PENDING -> to == OrderStatus.CONFIRMED
+                    || to == OrderStatus.REJECTED
+                    || to == OrderStatus.CANCELLED
+                    || (isStaffOrAdmin && type == OrderType.IN_STORE && to == OrderStatus.COMPLETED);
+            case CONFIRMED -> to == OrderStatus.DELIVERING
+                    || to == OrderStatus.CANCELLED
+                    || (isStaffOrAdmin && to == OrderStatus.COMPLETED);
+            case DELIVERING -> to == OrderStatus.COMPLETED
+                    || to == OrderStatus.CANCELLED
+                    || to == OrderStatus.RETURNED;
+            case COMPLETED -> isStaffOrAdmin && to == OrderStatus.RETURNED;
             case REJECTED, CANCELLED, RETURNED -> false;
         };
 
@@ -707,6 +780,9 @@ public class OrderService {
             }
         }
 
+        if (paymentRepository == null) {
+            return orderMapper.toResponse(order, itemSerialMap);
+        }
         Payment latestPayment = paymentRepository.findFirstByOrderIdOrderByIdDesc(order.getId()).orElse(null);
         return orderMapper.toResponse(order, itemSerialMap, latestPayment);
     }

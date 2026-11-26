@@ -1,6 +1,7 @@
 package com.datn.pc_store.modules.goodsreceipt.service;
 
 import com.datn.pc_store.common.dto.PageResponse;
+import com.datn.pc_store.common.exception.BadRequestException;
 import com.datn.pc_store.common.exception.ResourceNotFoundException;
 import com.datn.pc_store.common.util.PaginationUtils;
 import com.datn.pc_store.modules.goodsreceipt.dto.ProductSerialResponse;

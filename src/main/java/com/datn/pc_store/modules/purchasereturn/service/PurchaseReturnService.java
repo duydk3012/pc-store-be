@@ -358,8 +358,9 @@ public class PurchaseReturnService {
                 }
             }
             case CANCELLED -> {
+                Long createdBy = pr.getCreatedBy();
                 if (!isAdmin && !isManager && (createdBy == null || !createdBy.equals(currentUserId))) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản lý hoặc người tạo mới có quyền hủy phiếu hoàn trả.");
+                    throw new AccessDeniedException("Chỉ Quản lý hoặc người tạo mới có quyền hủy phiếu hoàn trả.");
                 }
                 for (PurchaseReturnItem item : pr.getItems()) {
                     ProductSerial ps = item.getProductSerial();
@@ -370,8 +371,9 @@ public class PurchaseReturnService {
                 }
             }
             case RETURNED -> {
+                Long createdBy = pr.getCreatedBy();
                 if (!isAdmin && !isManager && (createdBy == null || !createdBy.equals(currentUserId))) {
-                    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ Quản lý hoặc người tạo mới có quyền chuyển phiếu sang trạng thái đã hoàn về kho.");
+                    throw new AccessDeniedException("Chỉ Quản lý hoặc người tạo mới có quyền chuyển phiếu sang trạng thái đã hoàn về kho.");
                 }
                 for (PurchaseReturnItem item : pr.getItems()) {
                     ProductSerial ps = item.getProductSerial();
@@ -415,6 +417,13 @@ public class PurchaseReturnService {
         if (pr.getCreatedBy() != null && currentUserId != null
                 && !currentUserId.equals(pr.getCreatedBy()) && !SecurityUtils.hasRole("ADMIN")) {
             throw new AccessDeniedException("Chỉ người tạo hoặc Quản trị viên mới có quyền xóa phiếu hoàn trả.");
+        }
+        // Hoàn nguyên trạng thái serial về DEFECTIVE trước khi xóa phiếu
+        for (PurchaseReturnItem item : pr.getItems()) {
+            ProductSerial ps = item.getProductSerial();
+            if (ps != null && ps.getStatus() == ProductSerialStatus.PENDING_RETURN) {
+                ps.setStatus(ProductSerialStatus.DEFECTIVE);
+            }
         }
         String returnCode = pr.getCode();
         purchaseReturnRepository.delete(pr);

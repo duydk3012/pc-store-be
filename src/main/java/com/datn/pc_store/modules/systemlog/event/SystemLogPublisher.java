@@ -7,7 +7,9 @@ import com.datn.pc_store.modules.systemlog.enums.SystemLogStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Role;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -20,6 +22,7 @@ import java.util.Set;
  */
 @Slf4j
 @Component
+@Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 @RequiredArgsConstructor
 public class SystemLogPublisher {
 
