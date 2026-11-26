@@ -321,4 +321,16 @@ class SystemLogServiceTest {
         assertEquals(1, auditTrail.getTotalElements());
         assertEquals(22001L, auditTrail.getContent().get(0).getResourceId());
     }
+
+    @Test
+    @DisplayName("SystemLogAspect: getOrder() và getAdvice() không gây đệ quy StackOverflowError khi kết hợp nhiều Advisor")
+    void testSystemLogAspect_GetOrderDoesNotRecurse() {
+        com.datn.pc_store.modules.systemlog.annotation.SystemLogAspect aspect =
+                new com.datn.pc_store.modules.systemlog.annotation.SystemLogAspect(null);
+
+        assertEquals(org.springframework.core.Ordered.LOWEST_PRECEDENCE, aspect.getOrder());
+        assertNotNull(aspect.getAdvice());
+        assertNotSame(aspect, aspect.getAdvice());
+        assertNotNull(aspect.getPointcut());
+    }
 }

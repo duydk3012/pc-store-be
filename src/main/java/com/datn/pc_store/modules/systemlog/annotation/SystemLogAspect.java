@@ -11,6 +11,9 @@ import org.aopalliance.intercept.MethodInvocation;
 import org.springframework.aop.Pointcut;
 import org.springframework.aop.support.AbstractPointcutAdvisor;
 import org.springframework.aop.support.annotation.AnnotationMatchingPointcut;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.context.annotation.Role;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.stereotype.Component;
 
@@ -22,10 +25,12 @@ import java.lang.reflect.Method;
  */
 @Slf4j
 @Component
+@Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 @RequiredArgsConstructor
-public class SystemLogAspect extends AbstractPointcutAdvisor implements MethodInterceptor {
+public class SystemLogAspect extends AbstractPointcutAdvisor {
 
     private final Pointcut pointcut = new AnnotationMatchingPointcut(null, LogActivity.class, true);
+    private final MethodInterceptor advice = this::invoke;
     private final SystemLogPublisher systemLogPublisher;
 
     @Override
@@ -35,10 +40,14 @@ public class SystemLogAspect extends AbstractPointcutAdvisor implements MethodIn
 
     @Override
     public Advice getAdvice() {
-        return this;
+        return this.advice;
     }
 
     @Override
+    public int getOrder() {
+        return Ordered.LOWEST_PRECEDENCE;
+    }
+
     public Object invoke(MethodInvocation invocation) throws Throwable {
         Object result = invocation.proceed();
 
