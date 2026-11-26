@@ -78,21 +78,116 @@ public interface AnalyticsDashboardRepository extends JpaRepository<Invoice, Lon
     List<Object[]> queryRevenueAndOrderTrendDaily(@Param("fromTime") Instant fromTime, @Param("toTime") Instant toTime);
 
     @Query(value = """
+        WITH RECURSIVE CategoryHierarchy AS (
+            SELECT id AS category_id, name AS category_name, id AS root_id, name AS root_name, 0 AS depth
+            FROM categories
+            WHERE parent_id IS NULL
+            UNION ALL
+            SELECT c.id AS category_id, c.name AS category_name, ch.root_id, ch.root_name, ch.depth + 1 AS depth
+            FROM categories c
+            JOIN CategoryHierarchy ch ON c.parent_id = ch.category_id
+        ),
+        ProductPrimaryCategory AS (
+            SELECT 
+                cp.product_id,
+                ch.category_id AS primary_cat_id,
+                ch.category_name AS primary_cat_name,
+                ch.root_id,
+                ch.root_name,
+                ROW_NUMBER() OVER (PARTITION BY cp.product_id ORDER BY cp.is_primary DESC, ch.depth DESC, cp.category_id ASC) AS rn
+            FROM category_products cp
+            JOIN CategoryHierarchy ch ON cp.category_id = ch.category_id
+        ),
+        ProductSecondaryChild AS (
+            SELECT 
+                cp.product_id,
+                ch.root_id,
+                ch.category_id AS sec_cat_id,
+                ch.category_name AS sec_cat_name,
+                ROW_NUMBER() OVER (PARTITION BY cp.product_id, ch.root_id ORDER BY ch.depth DESC, cp.category_id ASC) AS rn
+            FROM category_products cp
+            JOIN CategoryHierarchy ch ON cp.category_id = ch.category_id
+            WHERE cp.is_primary = 0 AND ch.category_id <> ch.root_id
+        ),
+        ProductMapped AS (
+            SELECT 
+                ppc.product_id,
+                ppc.root_id,
+                ppc.root_name,
+                CASE 
+                    WHEN ppc.primary_cat_id <> ppc.root_id THEN ppc.primary_cat_id
+                    WHEN psc.sec_cat_id IS NOT NULL THEN psc.sec_cat_id
+                    ELSE NULL
+                END AS child_id,
+                CASE 
+                    WHEN ppc.primary_cat_id <> ppc.root_id THEN ppc.primary_cat_name
+                    WHEN psc.sec_cat_id IS NOT NULL THEN psc.sec_cat_name
+                    ELSE NULL
+                END AS child_name
+            FROM ProductPrimaryCategory ppc
+            LEFT JOIN ProductSecondaryChild psc 
+                ON ppc.product_id = psc.product_id AND ppc.root_id = psc.root_id AND psc.rn = 1
+            WHERE ppc.rn = 1
+        )
         SELECT 
-            c.id AS categoryId,
-            c.name AS categoryName,
+            COALESCE(pm.root_id, 0) AS rootCategoryId,
+            COALESCE(pm.root_name, 'Chưa phân loại') AS rootCategoryName,
+            pm.child_id AS childCategoryId,
+            pm.child_name AS childCategoryName,
             COALESCE(SUM(oi.subtotal), 0) AS revenue
-        FROM categories c
-        JOIN category_products cp ON c.id = cp.category_id
-        JOIN order_items oi ON cp.product_id = oi.product_id
+        FROM order_items oi
         JOIN orders o ON oi.order_id = o.id
         JOIN invoices i ON i.order_id = o.id
+        LEFT JOIN ProductMapped pm ON oi.product_id = pm.product_id
         WHERE i.status = 2 AND i.invoice_date >= :fromTime AND i.invoice_date <= :toTime
-        GROUP BY c.id, c.name
+        GROUP BY COALESCE(pm.root_id, 0), COALESCE(pm.root_name, 'Chưa phân loại'), pm.child_id, pm.child_name
         ORDER BY revenue DESC
-        LIMIT :limit
         """, nativeQuery = true)
-    List<Object[]> queryRevenueByCategoryTopN(@Param("fromTime") Instant fromTime, @Param("toTime") Instant toTime, @Param("limit") int limit);
+    List<Object[]> queryRevenueByCategoryHierarchy(@Param("fromTime") Instant fromTime, @Param("toTime") Instant toTime);
+
+    @Query(value = """
+        WITH RECURSIVE CategoryHierarchy AS (
+            SELECT id AS category_id, name AS category_name, id AS root_id, name AS root_name, 0 AS depth
+            FROM categories
+            WHERE parent_id IS NULL
+            UNION ALL
+            SELECT c.id AS category_id, c.name AS category_name, ch.root_id, ch.root_name, ch.depth + 1 AS depth
+            FROM categories c
+            JOIN CategoryHierarchy ch ON c.parent_id = ch.category_id
+        ),
+        ProductAllRootCategories AS (
+            SELECT 
+                cp.product_id,
+                ch.root_id,
+                ch.root_name,
+                ch.category_id,
+                ch.category_name,
+                ROW_NUMBER() OVER (
+                    PARTITION BY cp.product_id, ch.root_id 
+                    ORDER BY ch.depth DESC, cp.is_primary DESC, cp.category_id ASC
+                ) AS rn
+            FROM category_products cp
+            JOIN CategoryHierarchy ch ON cp.category_id = ch.category_id
+        )
+        SELECT 
+            COALESCE(parc.root_id, 0) AS rootCategoryId,
+            COALESCE(parc.root_name, 'Chưa phân loại') AS rootCategoryName,
+            CASE WHEN parc.category_id <> parc.root_id THEN parc.category_id ELSE NULL END AS childCategoryId,
+            CASE WHEN parc.category_id <> parc.root_id THEN parc.category_name ELSE NULL END AS childCategoryName,
+            COALESCE(SUM(oi.subtotal), 0) AS revenue
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.id
+        JOIN invoices i ON i.order_id = o.id
+        LEFT JOIN ProductAllRootCategories parc ON oi.product_id = parc.product_id AND parc.rn = 1
+        WHERE i.status = 2 AND i.invoice_date >= :fromTime AND i.invoice_date <= :toTime
+        GROUP BY 
+            COALESCE(parc.root_id, 0), 
+            COALESCE(parc.root_name, 'Chưa phân loại'),
+            CASE WHEN parc.category_id <> parc.root_id THEN parc.category_id ELSE NULL END,
+            CASE WHEN parc.category_id <> parc.root_id THEN parc.category_name ELSE NULL END
+        ORDER BY revenue DESC
+        """, nativeQuery = true)
+    List<Object[]> queryRevenueByAllLinkedCategories(@Param("fromTime") Instant fromTime, @Param("toTime") Instant toTime);
 
     @Query(value = """
         SELECT 
