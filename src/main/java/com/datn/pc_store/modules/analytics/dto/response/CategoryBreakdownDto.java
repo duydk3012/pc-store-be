@@ -3,6 +3,9 @@ package com.datn.pc_store.modules.analytics.dto.response;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -22,4 +25,8 @@ public class CategoryBreakdownDto {
 
     @Schema(description = "Tỷ trọng đóng góp (%)", example = "35.5")
     private double percentage;
+
+    @Schema(description = "Danh sách cơ cấu danh mục con trực thuộc (tỷ trọng % tính trên tổng danh mục cha)")
+    @Builder.Default
+    private List<CategoryBreakdownDto> children = new ArrayList<>();
 }

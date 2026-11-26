@@ -65,7 +65,7 @@ public class SecurityConfig {
                         // Favorites belong to the signed-in customer and are private to that account.
                         .requestMatchers("/api/favorites", "/api/favorites/**").hasRole("CUSTOMER")
 
-                        .requestMatchers(HttpMethod.GET, "/api/categories/**", "/api/brands/**", "/api/products/**", "/api/recommendations/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/categories/**", "/api/brands/**", "/api/products/**", "/api/recommendations/**", "/api/public/warranties/**").permitAll()
 
                         // Warranty management for Admin, Manager, Tech, and Sales
                         .requestMatchers("/api/admin/warranties/**", "/api/admin/warranty-requests/**",

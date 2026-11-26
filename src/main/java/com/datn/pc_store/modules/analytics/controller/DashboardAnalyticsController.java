@@ -37,9 +37,15 @@ public class DashboardAnalyticsController {
     }
 
     @GetMapping("/revenue-by-category")
-    @Operation(summary = "DASH-CH-02: Cơ cấu doanh thu theo Danh mục sản phẩm")
+    @Operation(summary = "DASH-CH-02: Cơ cấu doanh thu theo Danh mục chính (Donut Chart - Chuẩn Kế toán 100%)")
     public ResponseEntity<List<CategoryBreakdownDto>> getRevenueByCategory(@ParameterObject DateRangeFilterRequest filter) {
         return ResponseEntity.ok(dashboardService.getRevenueByCategory(filter));
+    }
+
+    @GetMapping("/revenue-by-category/marketing")
+    @Operation(summary = "DASH-CH-04: Doanh thu theo từng Danh mục / Bộ sưu tập (Bar Chart - Tính cả danh mục chính & phụ)")
+    public ResponseEntity<List<CategoryBreakdownDto>> getRevenueByCategoryMarketing(@ParameterObject DateRangeFilterRequest filter) {
+        return ResponseEntity.ok(dashboardService.getRevenueByCategoryMarketing(filter));
     }
 
     @GetMapping("/order-status-distribution")

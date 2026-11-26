@@ -27,20 +27,37 @@ public interface AnalyticsInventoryRepository extends JpaRepository<ProductSeria
     List<Object[]> queryInventoryOverviewSummary();
 
     @Query(value = """
+        WITH RECURSIVE CategoryHierarchy AS (
+            SELECT id AS category_id, id AS root_id, name AS root_name
+            FROM categories
+            WHERE parent_id IS NULL
+            UNION ALL
+            SELECT c.id AS category_id, ch.root_id, ch.root_name
+            FROM categories c
+            JOIN CategoryHierarchy ch ON c.parent_id = ch.category_id
+        ),
+        ProductRootCategory AS (
+            SELECT 
+                cp.product_id,
+                ch.root_id AS root_category_id,
+                ch.root_name AS root_category_name,
+                ROW_NUMBER() OVER (PARTITION BY cp.product_id ORDER BY ch.root_id ASC) AS rn
+            FROM category_products cp
+            JOIN CategoryHierarchy ch ON cp.category_id = ch.category_id
+        )
         SELECT 
-            c.id AS categoryId,
-            c.name AS categoryName,
+            COALESCE(prc.root_category_id, 0) AS categoryId,
+            COALESCE(prc.root_category_name, 'Chưa phân loại') AS categoryName,
             COUNT(ps.id) AS stockCount,
             COALESCE(SUM(ri.actual_unit_cost), 0) AS stockValue
-        FROM categories c
-        JOIN category_products cp ON c.id = cp.category_id
-        JOIN products p ON cp.product_id = p.id
+        FROM products p
+        LEFT JOIN ProductRootCategory prc ON p.id = prc.product_id AND prc.rn = 1
         JOIN product_serials ps ON p.id = ps.product_id
         LEFT JOIN receipt_items ri ON ps.receipt_item_id = ri.id
         WHERE ps.status IN (0, 2) 
           AND ps.is_terminated = 0
           AND p.is_deleted = 0
-        GROUP BY c.id, c.name
+        GROUP BY COALESCE(prc.root_category_id, 0), COALESCE(prc.root_category_name, 'Chưa phân loại')
         ORDER BY stockValue DESC
         """, nativeQuery = true)
     List<Object[]> queryStockByCategory();

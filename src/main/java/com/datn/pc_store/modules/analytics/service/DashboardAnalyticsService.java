@@ -99,31 +99,110 @@ public class DashboardAnalyticsService {
                 30
         );
 
-        List<Object[]> rows = dashboardRepository.queryRevenueByCategoryTopN(range[0], range[1], 10);
-        long totalCategoryRevenue = 0L;
+        List<Object[]> rows = dashboardRepository.queryRevenueByCategoryHierarchy(range[0], range[1]);
+        return buildHierarchicalCategoryBreakdown(rows, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CategoryBreakdownDto> getRevenueByCategoryMarketing(DateRangeFilterRequest filter) {
+        Instant[] range = AnalyticsDateHelper.resolveRange(
+                filter != null ? filter.getStartDate() : null,
+                filter != null ? filter.getEndDate() : null,
+                30
+        );
+
+        List<Object[]> rows = dashboardRepository.queryRevenueByAllLinkedCategories(range[0], range[1]);
+        long totalStoreRevenue = dashboardRepository.sumRevenueBetween(range[0], range[1]);
+        return buildHierarchicalCategoryBreakdown(rows, totalStoreRevenue);
+    }
+
+    private List<CategoryBreakdownDto> buildHierarchicalCategoryBreakdown(List<Object[]> rows, Long overrideTotalDenominator) {
+        java.util.Map<Long, String> rootNames = new java.util.LinkedHashMap<>();
+        java.util.Map<Long, Long> rootTotals = new java.util.LinkedHashMap<>();
+        java.util.Map<Long, Long> rootDirectOthers = new java.util.HashMap<>();
+        java.util.Map<Long, List<CategoryBreakdownDto>> rootChildrenMap = new java.util.HashMap<>();
+
         for (Object[] r : rows) {
-            totalCategoryRevenue += r[2] != null ? ((Number) r[2]).longValue() : 0L;
+            Long rootId = r[0] != null ? ((Number) r[0]).longValue() : 0L;
+            String rootName = r[1] != null ? (String) r[1] : "Chưa phân loại";
+            Long childId = r[2] != null ? ((Number) r[2]).longValue() : null;
+            String childName = r[3] != null ? (String) r[3] : null;
+            long rev = r[4] != null ? ((Number) r[4]).longValue() : 0L;
+
+            rootNames.putIfAbsent(rootId, rootName);
+            rootTotals.merge(rootId, rev, Long::sum);
+
+            if (childId != null && childName != null) {
+                rootChildrenMap.computeIfAbsent(rootId, k -> new ArrayList<>())
+                        .add(CategoryBreakdownDto.builder()
+                                .categoryId(childId)
+                                .categoryName(childName)
+                                .value(rev)
+                                .percentage(0.0)
+                                .children(List.of())
+                                .build());
+            } else {
+                rootDirectOthers.merge(rootId, rev, Long::sum);
+            }
         }
 
+        List<Long> sortedRootIds = rootTotals.entrySet().stream()
+                .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+                .limit(10)
+                .map(java.util.Map.Entry::getKey)
+                .toList();
+
+        long denominator = (overrideTotalDenominator != null && overrideTotalDenominator > 0)
+                ? overrideTotalDenominator
+                : sortedRootIds.stream().mapToLong(id -> rootTotals.getOrDefault(id, 0L)).sum();
+
         List<CategoryBreakdownDto> result = new ArrayList<>();
-        for (Object[] r : rows) {
-            Long catId = r[0] != null ? ((Number) r[0]).longValue() : null;
-            String catName = (String) r[1];
-            long rev = r[2] != null ? ((Number) r[2]).longValue() : 0L;
-            double pct = totalCategoryRevenue > 0
-                    ? BigDecimal.valueOf((double) rev * 100.0 / totalCategoryRevenue)
-                    .setScale(2, RoundingMode.HALF_UP).doubleValue()
-                    : 0.0;
+        for (Long rootId : sortedRootIds) {
+            long rootRev = rootTotals.getOrDefault(rootId, 0L);
+            double rootPct = calculatePercentage(rootRev, denominator);
+
+            List<CategoryBreakdownDto> childDtos = new ArrayList<>();
+            List<CategoryBreakdownDto> rawChildren = rootChildrenMap.getOrDefault(rootId, List.of());
+
+            if (!rawChildren.isEmpty()) {
+                for (CategoryBreakdownDto child : rawChildren) {
+                    child.setPercentage(calculatePercentage(child.getValue(), rootRev));
+                    childDtos.add(child);
+                }
+
+                long directOtherRev = rootDirectOthers.getOrDefault(rootId, 0L);
+                if (directOtherRev > 0) {
+                    childDtos.add(CategoryBreakdownDto.builder()
+                            .categoryId(0L)
+                            .categoryName("Khác")
+                            .value(directOtherRev)
+                            .percentage(calculatePercentage(directOtherRev, rootRev))
+                            .children(List.of())
+                            .build());
+                }
+
+                childDtos.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+            }
 
             result.add(CategoryBreakdownDto.builder()
-                    .categoryId(catId)
-                    .categoryName(catName)
-                    .value(rev)
-                    .percentage(pct)
+                    .categoryId(rootId)
+                    .categoryName(rootNames.get(rootId))
+                    .value(rootRev)
+                    .percentage(rootPct)
+                    .children(childDtos)
                     .build());
         }
 
         return result;
+    }
+
+    private double calculatePercentage(long part, long total) {
+        if (total <= 0) {
+            return 0.0;
+        }
+        return BigDecimal.valueOf((double) part * 100.0 / total)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     @Transactional(readOnly = true)
